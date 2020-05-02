@@ -10,27 +10,28 @@ from tqdm import tqdm
 class PheDVec(tf.keras.Model):
     def __init__(self, config_dir):
         super(PheDVec, self).__init__()
-        self.config = setConfig(config_dir) # apply json load function later
-        self.optimizer = tf.keras.optimizers.Adadelta() # set hparams later
+        self.config = setConfig(config_dir)
+        self.optimizer = tf.keras.optimizers.Adadelta()
         self.concept2id = None
         self.training_data = None
         
         self.embedding_layer = None
         self.visit_activation = tf.keras.layers.Activation(activation=tf.keras.activations.tanh)
         self.phecode_classifier = tf.keras.layers.Dense(582, name="phe_classifier", activation=tf.keras.activations.softmax) 
-        # output dim is the number of phecode classes, which is 582
+        # output dim is the number of phecode classes, 582
         
     def fitToData(self):
-        print("load patient record...")
-        patient_data = open_patient_record(self.config.data.patient_record)
-        print("get unique concept set...")
+        patient_data = readPatientRecord(self.config.data.patient_record)
         unique_concepts = getUniqueSet(patient_data)
-        print("build concept dict...")
         self.concept2id = buildDict(list(unique_concepts))
-        print("process training data...")
         self.training_data = processPatientRecord(patient_data, self.concept2id)
+        print("fitting process has been completed")
         
     def initModel(self):
+        if self.concept2id == None: 
+            print("set concept2id before initialzing the model")
+
+        print("initialize model")
         self.embedding_layer = tf.keras.layers.Embedding(len(self.concept2id)+1, 1024, mask_zero=True)
     
     def get_visitRep(self, x):
@@ -49,7 +50,7 @@ class PheDVec(tf.keras.Model):
         batch_cost = tf.math.divide( tf.math.negative(tf.reduce_sum(tf.math.add(cost1, cost2))), len(x_batch))
         return batch_cost
     
-    def computeConceptCost(self, x_batch):# has not yet tested
+    def computeConceptCost(self, x_batch): # has not yet tested
         w_emb = self.embedding_layer(range(len(self.concept2id)))
         norms = tf.math.exp(tf.reduce_sum(tf.matmul(w_emb, w_emb, transpose_b=True), axis=1))
         denoms = tf.math.exp(tf.reduce_sum(tf.multiply(self.embedding_layer(i_vec), self.embedding_layer(j_vec)), axis=1))
@@ -134,10 +135,19 @@ def convert_concept_batch(record_batch, concept2id):
         
     return tf.keras.preprocessing.sequence.pad_sequences(converted_batch, padding="post")
 
-def readPatientRecord(saved_dir):
-    with open(saved_dir, "rb") as f:
+def readPatientRecord(file_dir):
+    with open(file_dir, "rb") as f:
         mylist = pickle.load(f)
-    return mylist
+    
+    patient_record = []
+    labels = []
+
+    print("read patient data...")
+    for i in tqdm(range(len(mylist))):
+        patient_record.append(mylist[i][0])
+        labels.append(mylist[i][1])
+
+    return patient_record, labels
 
 def pick_ij(visit_record):
     i_vec = []
@@ -150,14 +160,10 @@ def pick_ij(visit_record):
             
     return i_vec, j_vec
 
-def readPatientRecord(saved_dir):
-    with open(saved_dir, "rb") as f:
-        mylist = pickle.load(f)
-    return mylist
-
 def getUniqueSet(patient_record):
     """--i: patient record
     --o: list of unique concepts in the record"""
+    print("get unique concept set...")
     unique_concept_set = set()
     
     for record in patient_record:
@@ -167,6 +173,7 @@ def getUniqueSet(patient_record):
     return unique_concept_set
 
 def buildDict(concept_list):
+    print("build concept dict...")
     my_dict = dict()
     for i in range(len(concept_list)):
         my_dict.update({concept_list[i] : i + 1})
@@ -174,6 +181,7 @@ def buildDict(concept_list):
     return my_dict
     
 def processPatientRecord(patient_record, concept2id):
+    print("process training data...")
     print("convert concept to concept ID")
     converted_record = convertToID(patient_record, concept2id)
     print("pad patient record")
