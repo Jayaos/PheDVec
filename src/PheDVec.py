@@ -14,6 +14,8 @@ class PheDVec(tf.keras.Model):
         self.optimizer = tf.keras.optimizers.Adadelta()
         self.concept2id = None
         self.training_data = None
+        self.labels = None
+        self.epoch_loss_avg = [] # record avg loss for all epochs
         
         self.embedding_layer = None
         self.visit_activation = tf.keras.layers.Activation(activation=tf.keras.activations.tanh)
@@ -21,65 +23,78 @@ class PheDVec(tf.keras.Model):
         # output dim is the number of phecode classes, 582
         
     def fitToData(self):
-        patient_data = readPatientRecord(self.config.data.patient_record)
+        patient_data, labels = readPatientRecord(self.config.data.patient_record)
         unique_concepts = getUniqueSet(patient_data)
         self.concept2id = buildDict(list(unique_concepts))
         self.training_data = processPatientRecord(patient_data, self.concept2id)
+        self.labels = labels
         print("fitting process has been completed")
         
     def initModel(self):
         if self.concept2id == None: 
             print("set concept2id before initialzing the model")
 
-        print("initialize model")
+        print("initialize model...")
         self.embedding_layer = tf.keras.layers.Embedding(len(self.concept2id)+1, 1024, mask_zero=True)
     
-    def get_visitRep(self, x):
-        emb_output = self.embedding_layer(x)
+    def getVisitRep(self, x_batch):
+        emb_output = self.embedding_layer(x_batch) # n(batch_size) * l(padded_len)
         visit_rep = self.visit_activation(tf.reduce_sum(tf.ragged.boolean_mask(emb_output, emb_output._keras_mask), axis=1))
-        return visit_rep
+        return visit_rep # n(batch_size) * d(dim)
         
     def computeVisitCost(self, x_batch, label_batch):
-        # visit-level cost
-        visit_rep = self.get_visitRep(x_batch)
-        prediction = self.phecode_classifier(visit_rep)
+        visit_rep = self.getvisitRep(x_batch)
+        phecode_prediction = self.phecode_classifier(visit_rep)
         mhot_labels = tf.reduce_sum(tf.one_hot(tf.ragged.constant(label_batch), depth=582), axis=1)
         logEps = tf.constant(1e-5)
-        cost1 = tf.multiply(mhot_labels, tf.math.log(tf.math.add(prediction, logEps)))
-        cost2 = tf.multiply(tf.math.subtract(1, mhot_labels), tf.math.log(tf.math.add(tf.math.subtract(1,prediction), logEps)))
-        batch_cost = tf.math.divide( tf.math.negative(tf.reduce_sum(tf.math.add(cost1, cost2))), len(x_batch))
-        return batch_cost
+        visit_cost1 = tf.multiply(mhot_labels, tf.math.log(tf.math.add(phecode_prediction, logEps)))
+        visit_cost2 = tf.multiply(tf.math.subtract(1, mhot_labels), tf.math.log(tf.math.add(tf.math.subtract(1,phecode_prediction), logEps)))
+        visit_cost = tf.math.divide( tf.math.negative(tf.reduce_sum(tf.math.add(visit_cost1, visit_cost2))), len(x_batch))
+        return visit_cost
     
-    def computeConceptCost(self, x_batch): # has not yet tested
+    def computeConceptCost(self, i_vec, j_vec): # has not yet tested
         w_emb = self.embedding_layer(range(len(self.concept2id)))
+        logEps = tf.constant(1e-5)
         norms = tf.math.exp(tf.reduce_sum(tf.matmul(w_emb, w_emb, transpose_b=True), axis=1))
         denoms = tf.math.exp(tf.reduce_sum(tf.multiply(self.embedding_layer(i_vec), self.embedding_layer(j_vec)), axis=1))
         concept_cost = tf.negative(tf.math.log((tf.divide(denoms, norms[i_vec]) + logEps)))
         return concept_cost
+
+    def computeCost(self, x_batch, i_vec, j_vec, label_batch):
+        batch_cost = tf.math.reduce_sum(self.computeVisitCost(x_batch, label_batch), self.computeConceptCost(i_vec, j_vec))
+        return batch_cost
     
-    def compute_gradients(self, x_batch, label_batch):
+    def computeGradients(self, x_batch, i_vec, j_vec, label_batch):
         with tf.GradientTape() as tape:
-            cost = self.compute_cost(x_batch, label_batch)
-                
+            cost = self.computeCost(x_batch, i_vec, j_vec, label_batch)
+
         return cost, tape.gradient(cost, self.trainable_variables)
         
-    def train_model(self, num_epochs, batch_size, save_dir):
-        train_data = read_list(self.config.data.train_data) 
-        
+    def train(self, num_epochs, batch_size, save_dir):
+        cost_avg = tf.keras.metrics.Mean()
         for epoch in range(num_epochs):
-            print("shuffle data and prepare batch for epoch")
-            shuffled_data = shuffle_data(train_data)
-            x_raw, labels = splitTrainData(shuffled_data)
-            x = convert_concept_batch(x_raw, self.concept2id)
-            total_batch = int(np.ceil(len(x) / batch_size))
-            
+            print("shuffle data and prepare batch for epoch...")
+            x_training, labels_training = shuffleData(self.training_data, self.labels)
+            total_batch = int(np.ceil(len(x_training)) / batch_size)
             progbar = tf.keras.utils.Progbar(total_batch)
+
             for i in range(total_batch):
-                x_batch = x[i * batch_size : (i+1) * batch_size]
-                label_batch = labels[i * batch_size : (i+1) * batch_size]
-                cost, gradients = self.compute_gradients(x_batch, label_batch)
+                i_vec = []
+                j_vec = []
+                x_batch = x_training[i * batch_size : (i+1) * batch_size]
+                label_batch = labels_training[i * batch_size : (i+1) * batch_size]
+                for x in x_batch:
+                    pickij(x, i_vec, j_vec)
+                batch_cost, gradients = self.computeGradients(x_batch, i_vec, j_vec, label_batch)
                 self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+                cost_avg(batch_cost) 
                 progbar.add(1)
+                print("Step {}: Loss: {:.4f}".format(self.optimizer.iterations.numpy(), batch_cost))
+
+            if (epoch % 1) == 0: 
+                avg_loss = cost_avg.result()
+                print("Epoch {}: Loss: {:.4f}".format(epoch+1, avg_loss))
+                self.epoch_loss_avg.append(avg_loss)
 
 # Functions 
 def setConfig(json_file):
@@ -93,47 +108,17 @@ def setConfig(json_file):
     config = DotMap(config_dict)
     return config
 
-def load_dictionary(pklfile):
-    f = open(pklfile, "rb")
-    dict_load = pickle.load(f)
-    return dict_load
-
-def load_emb_matrix(npydir):
-    return np.load(npydir)
-
-def shuffle_data(data):
-    train_data_shuffled = []
-    shuffle_index = list(range(len(data)))
+def shuffleData(data1, data2):
+    data1_shuffled = []
+    data2_shuffled = []
+    shuffle_index = list(range(len(data1)))
     random.shuffle(shuffle_index)
     
     for ind in shuffle_index:
-        train_data_shuffled.append(data[ind])
+        data1_shuffled.append(data1[ind])
+        data2_shuffled.append(data2[ind])
         
-    return train_data_shuffled
-
-def splitTrainData(mydata):
-    x = []
-    y = []
-    
-    for i in range(len(mydata)):
-        x.append(mydata[i][0])
-        y.append(mydata[i][1])
-    
-    return x, y
-
-def convert_concept(record, concept2id):
-    converted_record = []
-    for concept in record:
-        converted_record.append(concept2id[concept])
-        
-    return converted_record
-
-def convert_concept_batch(record_batch, concept2id):
-    converted_batch = []
-    for record in record_batch:
-        converted_batch.append(convert_concept(record, concept2id))
-        
-    return tf.keras.preprocessing.sequence.pad_sequences(converted_batch, padding="post")
+    return data1_shuffled, data2_shuffled
 
 def readPatientRecord(file_dir):
     with open(file_dir, "rb") as f:
@@ -149,16 +134,13 @@ def readPatientRecord(file_dir):
 
     return patient_record, labels
 
-def pick_ij(visit_record):
-    i_vec = []
-    j_vec = []
-    for first in visit_record:
-        for second in visit_record:
+def pickij(visit_record, i_vec, j_vec):
+    unpadded_record = visit_record[visit_record != 0]
+    for first in unpadded_record:
+        for second in unpadded_record:
             if first == second: continue
             i_vec.append(first)
             j_vec.append(second)
-            
-    return i_vec, j_vec
 
 def getUniqueSet(patient_record):
     """--i: patient record
