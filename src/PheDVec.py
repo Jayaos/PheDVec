@@ -43,7 +43,7 @@ class PheDVec(tf.keras.Model):
         return visit_rep # n(batch_size) * d(dim)
         
     def computeVisitCost(self, x_batch, label_batch):
-        visit_rep = self.getvisitRep(x_batch)
+        visit_rep = self.getVisitRep(x_batch)
         phecode_prediction = self.phecode_classifier(visit_rep)
         mhot_labels = tf.reduce_sum(tf.one_hot(tf.ragged.constant(label_batch), depth=582), axis=1)
         logEps = tf.constant(1e-5)
@@ -53,11 +53,11 @@ class PheDVec(tf.keras.Model):
         return visit_cost
     
     def computeConceptCost(self, i_vec, j_vec): # has not yet tested
-        w_emb = self.embedding_layer(range(len(self.concept2id)))
+        w_emb = self.embedding_layer(np.array(range(len(self.concept2id)+1)))
         logEps = tf.constant(1e-5)
-        norms = tf.math.exp(tf.reduce_sum(tf.matmul(w_emb, w_emb, transpose_b=True), axis=1))
-        denoms = tf.math.exp(tf.reduce_sum(tf.multiply(self.embedding_layer(i_vec), self.embedding_layer(j_vec)), axis=1))
-        concept_cost = tf.negative(tf.math.log((tf.divide(denoms, norms[i_vec]) + logEps)))
+        norms = tf.reduce_sum(tf.math.exp(tf.matmul(w_emb, w_emb, transpose_b=True)), axis=1)
+        denoms = tf.math.exp(tf.reduce_sum(tf.multiply(self.embedding_layer(np.array(i_vec)), self.embedding_layer(np.array(j_vec))), axis=1))
+        concept_cost = tf.negative(tf.math.log((tf.divide(denoms, tf.gather(norms, i_vec)) + logEps)))
         return concept_cost
 
     def computeCost(self, x_batch, i_vec, j_vec, label_batch):
@@ -118,7 +118,7 @@ def shuffleData(data1, data2):
         data1_shuffled.append(data1[ind])
         data2_shuffled.append(data2[ind])
         
-    return data1_shuffled, data2_shuffled
+    return np.array(data1_shuffled), np.array(data2_shuffled)
 
 def readPatientRecord(file_dir):
     with open(file_dir, "rb") as f:
@@ -183,12 +183,3 @@ def convertToID(patient_record, conncept2id):
 def padRecord(patient_record, padding_option="post"):
     padded_record = tf.keras.preprocessing.sequence.pad_sequences(patient_record, padding=padding_option)
     return padded_record
-
-def open_patient_record(data_dir):
-    patient_record = []
-    with open(data_dir, "r") as f:
-        patients = f.read().split("\n")
-        for i in tqdm(range(len(patients))):
-            patient = patients[i]
-            patient_record.append(patient.split(","))
-    return patient_record
