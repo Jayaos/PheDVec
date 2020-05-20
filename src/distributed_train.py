@@ -19,9 +19,20 @@ class Train(object):
         self.model = model
         self.strategy = strategy
 
-    def compute_loss(self, labels, predictions):
+    def compute_visitloss(self, labels, predictions):
         per_example_loss = self.model.compute_cost(x, labels, predictions)
-        return tf.nn.compute_average_loss(per_example_loss, self.batch_size)
+        return tf.nn.compute_average_loss(per_example_loss, global_batch_size=self.batch_size)
+    
+    def compute_conceptloss(self, i_vec, j_vec):
+        logEps = tf.constant(1e-5)
+        norms = tf.reduce_sum(tf.math.exp(tf.matmul(self.model.embedding, self.model.embedding, transpose_b=True)), axis=1)
+        denoms = tf.math.exp(tf.reduce_sum(tf.multiply(tf.nn.embedding_lookup(self.model.embedding, i_vec), 
+                                                       tf.nn.embedding_lookup(self.model.embedding, j_vec)), axis=1))
+        concept_loss = tf.negative(tf.math.log((tf.divide(denoms, tf.gather(norms, i_vec)) + logEps)))
+        return tf.nn.compute_average_loss(concept_loss, global_batch_size=self.batch_size)
+
+
+        pass
 
     def train_step(self, input_batch):
         """One train step.
@@ -31,10 +42,23 @@ class Train(object):
         loss: Scaled loss.
         """
 
+        def pickij(visit_record, i_vec, j_vec):
+            unpadded_record = visit_record[visit_record != 0]
+            for first in unpadded_record:
+                for second in unpadded_record:
+                    if first == second: continue
+                    i_vec.append(first)
+                    j_vec.append(second)
+
         x_batch, label = input_batch
+        i_vec = []
+        j_vec = []
+        
+        for x in x_batch:
+            pickij(x, i_vec, j_vec)
         with tf.GradientTape() as tape:
-            predictions = self.model(x_batch, training=True)
-            loss = self.compute_loss(labels, predictions)
+            predictions = self.model(x_batch)
+            loss = self.compute_visitloss(labels, predictions) + self.compute_conceptloss(i_vec, j_vec)
         gradients = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 

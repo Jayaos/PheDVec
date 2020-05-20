@@ -1,6 +1,8 @@
 import tensorflow as tf
 import pickle
 from tqdm import tqdm
+import json
+from dotmap import DotMap
 
 def create_dataset(buffer_size, batch_size, data_format, data_dir):
     """Creates a tf.data Dataset.
@@ -33,3 +35,19 @@ def read_data(file_dir):
         patient_record.append(mylist[i][0])
         labels.append(mylist[i][1])
     return patient_record, labels
+
+def set_config(json_file):
+    """
+    Get the config from a json file
+    """
+    # parse the configurations from the config json file provided
+    with open(json_file, 'r') as config_file:
+        config_dict = json.load(config_file)
+    # convert the dictionary to a namespace using bunch lib
+    config = DotMap(config_dict)
+    return config
+
+def load_dictionary(dictionary_dir):
+    f = open(dictionary_dir, "rb")
+    dict_load = pickle.load(f)
+    return dict_load
