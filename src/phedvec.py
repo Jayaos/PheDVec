@@ -24,4 +24,5 @@ class PhedVec(tf.keras.Model):
         emb_output = tf.nn.embedding_lookup(self.embedding, x) # n(batch_size) * l(padded_len)
         mask = x != 0
         visit_rep = self.visit_activation(tf.reduce_sum(tf.ragged.boolean_mask(emb_output, mask), axis=1))
-        return visit_rep # n(batch_size) * d(dim)
+        softmax_var = self.phecode_classifier(visit_rep)
+        return softmax_var # n(batch_size) * label_num

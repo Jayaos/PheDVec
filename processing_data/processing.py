@@ -2,6 +2,7 @@ import numpy as np
 import json
 from dotmap import DotMap
 import tensorflow as tf
+from tqdm import tqdm
 
 class DataProcessor(object):
     """
@@ -12,6 +13,7 @@ class DataProcessor(object):
         self.config = set_config(config_dir)
 
     def process_patientrecord(self, patient_data):
+        patient_record, labels = read_data(self.config.data.train_data)
         unique_concepts = getUniqueSet(patient_data)
         self.concept2id = buildDict(list(unique_concepts))
         self.training_patient_record = map_patientrecord(patient_data, self.concept2id)
@@ -30,6 +32,19 @@ def set_config(json_file):
     # convert the dictionary to a namespace using bunch lib
     config = DotMap(config_dict)
     return config
+    
+def read_data(file_dir):
+    with open(file_dir, "rb") as f:
+        mylist = pickle.load(f)
+    
+    patient_record = []
+    labels = []
+
+    print("read patient data...")
+    for i in tqdm(range(len(mylist))):
+        patient_record.append(mylist[i][0])
+        labels.append(mylist[i][1])
+    return patient_record, labels
 
 def getUniqueSet(patient_record):
     """--i: patient record

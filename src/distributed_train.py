@@ -11,16 +11,17 @@ class Train(object):
         strategy: Distribution strategy in use
     """
 
-    def __init__(self, model, epochs, batch_size, lr=0.01, strategy):
+    def __init__(self, model, strategy, epochs, batch_size, lr=0.01):
         self.epochs = epochs
         self.batch_size = batch_size
         self.optimizer = tf.keras.optimizers.Adadelta(learning_rate=lr)
+        self.loss_object = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
         self.loss_metric = [] # need revisit
         self.model = model
         self.strategy = strategy
 
     def compute_visitloss(self, labels, predictions):
-        per_example_loss = self.model.compute_cost(x, labels, predictions)
+        per_example_loss = self.loss_object(labels, predictions)
         return tf.nn.compute_average_loss(per_example_loss, global_batch_size=self.batch_size)
     
     def compute_conceptloss(self, i_vec, j_vec):
@@ -30,9 +31,6 @@ class Train(object):
                                                        tf.nn.embedding_lookup(self.model.embedding, j_vec)), axis=1))
         concept_loss = tf.negative(tf.math.log((tf.divide(denoms, tf.gather(norms, i_vec)) + logEps)))
         return tf.nn.compute_average_loss(concept_loss, global_batch_size=self.batch_size)
-
-
-        pass
 
     def train_step(self, input_batch):
         """One train step.
@@ -50,7 +48,7 @@ class Train(object):
                     i_vec.append(first)
                     j_vec.append(second)
 
-        x_batch, label = input_batch
+        x_batch, labels = input_batch
         i_vec = []
         j_vec = []
         
@@ -64,38 +62,40 @@ class Train(object):
 
         return loss
 
-    def custom_training(self, train_dist_ds, strategy):
+    def custom_training(self, train_dist_ds, total_len, strategy):
         """Custom distributed training loop
         """
-
-        def distributed_train_epoch(ds):
+        def distributed_train_epoch(ds, total_len, batch_size):
             total_loss = 0.0
             num_train_batches = 0.0
+            training_len = total_len / batch_size
+            progbar = tf.keras.utils.Progbar(training_len)
             for one_batch in ds:
                 per_replica_loss = strategy.run(self.train_step, args=(one_batch,))
                 total_loss += strategy.reduce(
                     tf.distribute.ReduceOp.SUM, per_replica_loss, axis=None)
                 num_train_batches += 1
+                progbar.add(1)
             return total_loss, num_train_batches
         
         for epoch in range(self.epochs):
-            train_total_loss, num_train_batches = distributed_train_epoch(train_dist_ds)
+            train_total_loss, num_train_batches = distributed_train_epoch(train_dist_ds, total_len, self.batch_size)
 
             template = ('Epoch: {}, Train Loss: {}')
             print(template.format(epoch, train_total_loss / num_train_batches))
 
-def main(epochs, buffer_size, batch_size, lr=0.01, data_dir, config_dir, num_gpus=2):
+def main(epochs, buffer_size, batch_size, config_dir, num_gpus=2, lr=0.01):
     """main function for implementation"""
 
     devices = ['/device:GPU:{}'.format(i) for i in range(num_gpus)]
     strategy = tf.distribute.MirroredStrategy(devices)
-    train_dataset = utils.create_dataset(buffer_size, batch_size, data_dir)
+    train_dataset, total_len = utils.create_dataset(buffer_size, batch_size, config_dir)
 
     with strategy.scope():
         phedvec = PhedVec(config_dir)
-        Trainer = Train(phedvec, epochs, batch_size, lr, strategy)
+        Trainer = Train(phedvec, strategy, epochs, batch_size, lr)
 
         train_distributed_datset = strategy.experimental_distribute_dataset(train_dataset)
 
     print('Training...')
-    Trainer.custom_training(train_distributed_datset, strategy)
+    Trainer.custom_training(train_distributed_datset, total_len, strategy)
