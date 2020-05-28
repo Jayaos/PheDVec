@@ -1,6 +1,7 @@
 import tensorflow as tf
 from src.phedvec import PhedVec
 from src import utils
+import numpy as np
 
 class Train(object):
     """Class for training PhedVec model
@@ -23,9 +24,11 @@ class Train(object):
     def compute_visitloss(self, labels, predictions):
         per_example_loss = self.loss_object(labels, predictions)
         return tf.nn.compute_average_loss(per_example_loss, global_batch_size=self.batch_size)
-    
+
     def compute_conceptloss(self, i_vec, j_vec):
         logEps = tf.constant(1e-5)
+        i_vec = np.array(i_vec)
+        j_vec = np.array(j_vec)
         norms = tf.reduce_sum(tf.math.exp(tf.matmul(self.model.embedding, self.model.embedding, transpose_b=True)), axis=1)
         denoms = tf.math.exp(tf.reduce_sum(tf.multiply(tf.nn.embedding_lookup(self.model.embedding, i_vec), 
                                                        tf.nn.embedding_lookup(self.model.embedding, j_vec)), axis=1))
@@ -65,6 +68,7 @@ class Train(object):
     def custom_training(self, train_dist_ds, total_len, strategy):
         """Custom distributed training loop
         """
+
         def distributed_train_epoch(ds, total_len, batch_size):
             total_loss = 0.0
             num_train_batches = 0.0
