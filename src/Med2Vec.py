@@ -32,7 +32,34 @@ class Med2Vec(tf.keras.Model):
         softmax_result = self.softmax_prediction(visit_rep)
         return softmax_result
 
+    @tf.function
+    def computeVisitCost(self, x, mask):
+        logEps = tf.constant(1e-8)
+        pred = self.getPrediction(x)
+        mask_1 = (mask[:-1] * mask[1:])[:, None]
 
+        forward_results =  tf.multiply(pred[:-1], mask_1)
+        forward_cross_entropy = -tf.add(tf.multiply(x[1:], tf.math.log(forward_results + logEps)),
+        tf.multiply((1. - x[1:]), tf.math.log(1. - forward_results + logEps)))
+        backward_results =  tf.multiply(pred[1:], mask_1)
+        backward_cross_entropy = -tf.add(tf.multiply(x[:-1], tf.math.log(backward_results + logEps)),
+        tf.multiply((1. - x[:-1]), tf.math.log(1. - backward_results + logEps)))
+
+        visit_cost = tf.divide(tf.add(tf.reduce_sum(forward_cross_entropy, axis=[0, 1]), tf.reduce_sum(backward_cross_entropy, axis=[0, 1])), 
+        tf.add(tf.reduce_sum(mask_1), logEps))
+
+        return visit_cost
+
+    @tf.function
+    def computeConceptCost(self, i_vec, j_vec):
+        logEps = tf.constant(1e-8)
+        preVec = tf.maximum(self.embedding, 0)
+        norms = tf.exp(tf.reduce_sum(tf.matmul(preVec, preVec, transpose_b=True), axis=1))
+        denoms = tf.exp(tf.reduce_sum(tf.multiply(tf.gather(preVec, i_vec), tf.gather(preVec, j_vec)), axis=1))
+        emb_cost = tf.negative(tf.math.log(tf.divide(denoms, tf.gather(norms, i_vec))+ logEps))
+        
+        return tf.reduce_mean(emb_cost)
+        
 def setConfig(json_file):
     """
     Get the config from a json file
