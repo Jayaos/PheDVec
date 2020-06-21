@@ -59,7 +59,33 @@ class Med2Vec(tf.keras.Model):
         emb_cost = tf.negative(tf.math.log(tf.divide(denoms, tf.gather(norms, i_vec))+ logEps))
         
         return tf.reduce_mean(emb_cost)
-        
+
+    def train(self, num_epochs, batch_size, buffer_size, save_dir):
+        cost_avg = tf.keras.metrics.Mean()
+        dataset = tf.data.Dataset.from_tensor_slices((self.training_data, self.labels)).shuffle(buffer_size).batch(batch_size)
+        for epoch in range(num_epochs):
+            total_batch = int(np.ceil(len(self.training_data)) / batch_size)
+            progbar = tf.keras.utils.Progbar(total_batch)
+
+            for one_batch in dataset:
+
+                x, mask, i_vec, j_vec = padMatrix(one_batch, len(self.concept2id))
+
+                with tf.GradientTape() as tape:
+                    batch_cost = tf.add(self.computeConceptCost(i_vec, j_vec), 
+                    self.computeVisitCost(x, mask))
+                gradients = tape.gradient(batch_cost, self.trainable_variables)
+                self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+                cost_avg(batch_cost)
+                progbar.add(1)
+
+            if (epoch % 1) == 0: 
+                avg_loss = cost_avg.result()
+                print("Epoch {}: Loss: {:.4f}".format(epoch+1, avg_loss))
+                self.epoch_loss_avg.append(avg_loss.numpy)
+                
+        self.saveResults(save_dir, epoch, avg_loss)
+
 def setConfig(json_file):
     """
     Get the config from a json file
