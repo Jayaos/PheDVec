@@ -19,8 +19,8 @@ class PheDVec(tf.keras.Model):
         self.epoch_loss_avg = [] # record avg loss for all epochs
         
         self.visit_activation = tf.keras.layers.Activation(activation=tf.keras.activations.tanh)
-        self.phecode_classifier = tf.keras.layers.Dense(582, name="phe_classifier", activation=tf.keras.activations.softmax) 
-        # output dim is the number of phecode classes, 582
+        self.phecode_classifier = tf.keras.layers.Dense(self.config.hparams.num_pheclass, 
+        name="phe_classifier", activation=tf.keras.activations.softmax) 
         
     def fitToData(self):
         with tf.device("/cpu:0"):

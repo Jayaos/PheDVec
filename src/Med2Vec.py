@@ -24,6 +24,10 @@ class Med2Vec(tf.keras.Model):
         print("initialize embedding...")
         self.embedding = tf.Variable(tf.random.uniform([len(self.concept2id), self.config.hparams.emb_dim], 0.1, -0.1))
         self.bias = tf.zeros(self.config.hparams.emb_dim)
+
+    def loadData(self):
+        print("load training data...")
+        self.training_data = load_data(self.config.data.training_data)
         
     @tf.function
     def getPrediction(self, x):
@@ -51,10 +55,10 @@ class Med2Vec(tf.keras.Model):
         return visit_cost
 
     @tf.function
-    def computeConceptCost(self, i_vec, j_vec):
+    def computeConceptCost(self, i_vec, j_vec): # serious problem here take a look
         logEps = tf.constant(1e-8)
-        preVec = tf.maximum(self.embedding, 0)
-        norms = tf.exp(tf.reduce_sum(tf.matmul(preVec, preVec, transpose_b=True), axis=1))
+        preVec = tf.keras.activations.relu(self.embedding)
+        norms = tf.reduce_sum(tf.exp(tf.matmul(preVec, preVec, transpose_b=True)), axis=1)
         denoms = tf.exp(tf.reduce_sum(tf.multiply(tf.gather(preVec, i_vec), tf.gather(preVec, j_vec)), axis=1))
         emb_cost = tf.negative(tf.math.log(tf.divide(denoms, tf.gather(norms, i_vec))+ logEps))
         
@@ -62,7 +66,7 @@ class Med2Vec(tf.keras.Model):
 
     def train(self, num_epochs, batch_size, buffer_size, save_dir):
         cost_avg = tf.keras.metrics.Mean()
-        dataset = tf.data.Dataset.from_tensor_slices((self.training_data, self.labels)).shuffle(buffer_size).batch(batch_size)
+        dataset = tf.data.Dataset.from_tensor_slices(self.training_data).shuffle(buffer_size).batch(batch_size)
         for epoch in range(num_epochs):
             total_batch = int(np.ceil(len(self.training_data)) / batch_size)
             progbar = tf.keras.utils.Progbar(total_batch)
@@ -124,3 +128,8 @@ def loadDictionary(data_dir):
     with open(data_dir, 'rb') as f:
         my_dict = pickle.load(f)
     return my_dict
+
+def load_data(data_dir):
+    with open(data_dir, "rb") as f:
+        mylist = pickle.load(f)
+    return mylist
