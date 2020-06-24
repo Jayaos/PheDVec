@@ -16,8 +16,12 @@ class DataProcessor(object):
         self.icd10_phecode_dict = None
         self.icd10cm_phecode_dict = None
         self.icd_omop_dict = None
+        self.omop_phecode_dict = None
         self.filtered_standard_record = None
         self.filtered_source_record = None
+
+        self.med2vec_format = None
+        self.phedvec_format = None
 
     def processRawRecord(self, removing_list=None):
 
@@ -34,7 +38,7 @@ class DataProcessor(object):
 
         standard_record, source_record = process_record(record_df)
         self.filtered_standard_record, self.filtered_source_record = filter_record(standard_record, 
-        source_record, self.icd_omop_dict)
+        source_record, self.icd_omop_dict, self.omop_phecode_dict)
 
     def buildDict_ICDPhecode(self):
 
@@ -59,7 +63,6 @@ class DataProcessor(object):
         
         print("build ICD-phecode dictionary...")
         self.icd_omop_dict = build_ICDOMOP_dict(icd_omop)
-
 
 def set_config(json_file):
     """
@@ -180,9 +183,10 @@ def process_record(record_df):
 
     return standard_record, source_record
 
-def filter_record(standard_record, source_record, icd_omop_dict):
+def filter_record(standard_record, source_record, icd_omop_dict, omop_phecode_dict):
     assert len(standard_record) == len(source_record), "the length of the two records must be the same"
     available_source_concepts = set(icd_omop_dict.keys())
+    available_omop_phecode = set(omop_phecode_dict.keys())
     filtered_standard_record = []
     filtered_source_record = []
 
@@ -191,7 +195,7 @@ def filter_record(standard_record, source_record, icd_omop_dict):
         filtered_source_visit = []
 
         for k in range(len(source_record[i])):
-            if len(set.intersection(set(source_record[i][k]), available_source_concepts)) > 1:
+            if len(set.intersection(set(source_record[i][k]), available_source_concepts)) > 1 and len(set.intersection(set(source_record[i][k]), available_omop_phecode)) > 0:
                 filtered_standard_visit.append(standard_record[i][k])
                 filtered_source_visit.append(source_record[i][k])
             else:
