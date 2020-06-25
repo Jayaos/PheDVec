@@ -20,6 +20,7 @@ class DataProcessor(object):
         self.standard_record = None
         self.source_record = None
 
+        self.concept2id = None
         self.med2vec_format = None
         self.phedvec_format = None
 
@@ -47,8 +48,10 @@ class DataProcessor(object):
         self.icd10_phecode_dict, self.icd10cm_phecode_dict)
 
     def convertRecord(self):
-        self.med2vec_format = convert_med2vec_format(self.standard_record)
-        self.phedvec_format = convert_phedvec_format(self.standard_record, self.label)
+        self.concept2id = build_dict(self.standard_record)
+
+        self.med2vec_format = convert_med2vec_format(self.standard_record, self.concept2id)
+        self.phedvec_format = convert_phedvec_format(self.standard_record, self.label, self.concept2id)
 
     def buildDict_ICDPhecode(self):
 
@@ -72,6 +75,14 @@ class DataProcessor(object):
         icd_phecode_set = set.union(set(self.icd10_phecode_dict.keys()), set(self.icd10cm_phecode_dict.keys()))
         self.omop_icd_dict = build_OMOPICD_dict(icd_omop, icd_phecode_set) 
 
+    def saveResults(self):
+        print("save concept2id in the specified dir")
+        save_dict(self.concept2id, self.config.dir.save_dir)
+
+        print("save training data in the specified dir")
+        save_data(self.med2vec_format, self.config.dir.save_dir)
+        save_data(self.phedvec_format, self.config.dir.save_dir)
+
 def set_config(json_file):
     """
     Get the config from a json file
@@ -82,6 +93,27 @@ def set_config(json_file):
     # convert the dictionary to a namespace using bunch lib
     config = DotMap(config_dict)
     return config
+
+def get_unique_concept(record):
+    unique_concept = set()
+
+    print("count unique concept in the record...")
+    for i in tqdm(range(len(record))):
+        for visit in record[i]:
+            for concept in visit:
+                unique_concept.add(concept)
+
+    return unique_concept
+
+def build_dict(record):
+    concept_list = list(get_unique_concept(record))
+
+    print("build concept dict...")
+    my_dict = dict()
+    for i in range(len(concept_list)):
+        my_dict.update({concept_list[i] : i})
+
+    return my_dict
 
 def read_icd_omop(data_dir):
     print("reading data")
@@ -240,35 +272,58 @@ def lookup_omop_icd(source_id, omop_icd_dict):
 
 def lookup_icd_phecode(dict_type, icd_code, icd10_phecode_dict, icd10cm_phecode_dict):
     if dict_type == "ICD10":
-        phecode = icd10_phecode_dict[icd_code]
+        try:
+            phecode = icd10_phecode_dict[icd_code]
+        except:
+            phecode = icd10cm_phecode_dict[icd_code]
     elif dict_type == "ICD10CM":
-        phecode = icd10cm_phecode_dict[icd_code]
+        try:
+            phecode = icd10cm_phecode_dict[icd_code]
+        except:
+            phecode = icd10_phecode_dict[icd_code]
     
     return phecode
 
-def convert_med2vec_format(standard_record):
+def convert_med2vec_format(standard_record, concept2id):
     med2vec_record = []
 
     print("convert patient record into Med2Vec pacakage compatiable format")
     for i in tqdm(range(len(standard_record))):
         for standard_visit in standard_record[i]:
-            med2vec_record.append(standard_visit)
+            coded_visit = apply_concept2id(standard_visit, concept2id)
+            med2vec_record.append(coded_visit)
         if i != (len(standard_record) - 1):
             med2vec_record.append([-1])
 
     return med2vec_record
 
-def convert_phedvec_format(standard_record, label):
+def convert_phedvec_format(standard_record, label, concept2id):
     assert len(standard_record) == len(label), "Length of the standard record and label must be the same"
     phedvec_record = []
     phedvec_label = []
 
     for i in tqdm(range(len(standard_record))):
         for standard_visit in standard_record[i]:
-            phedvec_record.append(standard_visit)
+            coded_visit = apply_concept2id(standard_visit, concept2id)
+            phedvec_record.append(coded_visit)
 
     for i in tqdm(range(len(label))):
         for l in label[i]:
             phedvec_label.append(l)
 
     return [phedvec_record, phedvec_label]
+
+def apply_concept2id(visit, concept2id):
+    converted_visit = []
+    for concept in visit:
+        converted_visit.append(concept2id[concept])
+    
+    return converted_visit
+
+def save_dict(mydict, save_dir):
+    with open(os.path.join(save_dir, "concept2id.pkl"), 'wb') as f:
+        pickle.dump(mydict, f)
+
+def save_data(mydata, save_dir):
+    with open(os.path.join(save_dir, "concept2id.pkl"), 'wb') as f:
+        pickle.dump(mydict, f)
