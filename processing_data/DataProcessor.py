@@ -15,18 +15,18 @@ class DataProcessor(object):
         self.icd9_phecode_dict = None
         self.icd10_phecode_dict = None
         self.icd10cm_phecode_dict = None
-        self.icd_omop_dict = None
+        self.omop_icd_dict = None
         self.omop_phecode_dict = None
-        self.filtered_standard_record = None
-        self.filtered_source_record = None
+        self.standard_record = None
+        self.source_record = None
 
         self.med2vec_format = None
         self.phedvec_format = None
 
     def processRawRecord(self, removing_list=None):
 
-        if self.icd_omop_dict == None:
-            print("build icd_omop_dict first")
+        if self.omop_icd_dict == None:
+            print("build omop_icd_dict first")
 
         record_df = build_record_df(self.config.data.patient_record)
 
@@ -36,33 +36,41 @@ class DataProcessor(object):
         else:
             print("No concepts to remove from the patient record")
 
+        print()
         standard_record, source_record = process_record(record_df)
-        self.filtered_standard_record, self.filtered_source_record = filter_record(standard_record, 
-        source_record, self.icd_omop_dict, self.omop_phecode_dict)
+        self.standard_record, self.source_record = filter_record(standard_record, 
+        source_record, self.omop_icd_dict)
+
+    def labelRecord(self):
+        print("generate phecode label based on omop_source_id")
+        self.label = label_record(self.source_record, self.omop_icd_dict, 
+        self.icd10_phecode_dict, self.icd10cm_phecode_dict)
+
+    def convertRecord(self):
+        self.med2vec_format = convert_med2vec_format(self.standard_record)
+        self.phedvec_format = convert_phedvec_format(self.standard_record, self.label)
 
     def buildDict_ICDPhecode(self):
 
         print("load ICD-phecode mapping data...")
-        icd9_phecode_map = pd.read_csv(self.config.data.icd9_phecode_map, encoding="ISO-8859-1")
         icd10_phecode_map = pd.read_csv(self.config.data.icd10_phecode_map, encoding="ISO-8859-1")
         icd10cm_phecode_map = pd.read_csv(self.config.data.icd10cm_phecode_map, encoding="ISO-8859-1")
 
         print("build ICD-phecode dictionary...")
-        self.icd9_phecode_dict = build_ICD9phecode_dict(icd9_phecode_map)
         self.icd10_phecode_dict = build_ICD10phecode_dict(icd10_phecode_map)
         self.icd10cm_phecode_dict = build_ICD10cmphecode_dict(icd10cm_phecode_map)
 
-    def buildDict_ICDOMOP(self):
+    def buildDict_OMOPICD(self):
 
         print("load ICD-omop mapping data...")
-        icd9_omop = read_icd_omop(self.config.data.icd9_omop)
         icd10_omop = read_icd_omop(self.config.data.icd10_omop)
         icd10cm_omop = read_icd_omop(self.config.data.icd10cm_omop)
 
-        icd_omop = pd.concat([icd9cm_omop, icd10_omop, icd10cm_omop], ignore_index=True)
+        icd_omop = pd.concat([icd10_omop, icd10cm_omop], ignore_index=True)
         
         print("build ICD-phecode dictionary...")
-        self.icd_omop_dict = build_ICDOMOP_dict(icd_omop)
+        icd_phecode_set = set.union(set(self.icd10_phecode_dict.keys()), set(self.icd10cm_phecode_dict.keys()))
+        self.omop_icd_dict = build_OMOPICD_dict(icd_omop, icd_phecode_set) 
 
 def set_config(json_file):
     """
@@ -118,10 +126,13 @@ def build_ICD10cmphecode_dict(icd10cm_map):
     
     return icd10cm_dict
 
-def build_ICDOMOP_dict(omop_raw):
+def build_OMOPICD_dict(omop_raw, icd_phecode_set):
     mydict = dict()
     for i in tqdm(range(omop_raw.shape[0])):
-        mydict.update({omop_raw["concept_id"][i] : (omop_raw["source_type"][i], omop_raw["source_id"][i])})
+        if omop_raw["source_id"][i] in icd_phecode_set:
+            mydict.update({omop_raw["concept_id"][i] : (omop_raw["source_type"][i], omop_raw["source_id"][i])})
+        else:
+            continue
     
     return mydict
 
@@ -183,10 +194,9 @@ def process_record(record_df):
 
     return standard_record, source_record
 
-def filter_record(standard_record, source_record, icd_omop_dict, omop_phecode_dict):
+def filter_record(standard_record, source_record, omop_icd_dict):
     assert len(standard_record) == len(source_record), "the length of the two records must be the same"
-    available_source_concepts = set(icd_omop_dict.keys())
-    available_omop_phecode = set(omop_phecode_dict.keys())
+    available_source_concepts = set(omop_icd_dict.keys())
     filtered_standard_record = []
     filtered_source_record = []
 
@@ -195,7 +205,7 @@ def filter_record(standard_record, source_record, icd_omop_dict, omop_phecode_di
         filtered_source_visit = []
 
         for k in range(len(source_record[i])):
-            if len(set.intersection(set(source_record[i][k]), available_source_concepts)) > 1 and len(set.intersection(set(source_record[i][k]), available_omop_phecode)) > 0:
+            if len(set.intersection(set(source_record[i][k]), available_source_concepts)) == len(set(source_record[i][k])):
                 filtered_standard_visit.append(standard_record[i][k])
                 filtered_source_visit.append(source_record[i][k])
             else:
@@ -208,3 +218,57 @@ def filter_record(standard_record, source_record, icd_omop_dict, omop_phecode_di
             continue
 
     return filtered_standard_record, filtered_source_record
+
+def label_record(source_record, omop_icd_dict, icd10_phecode_dict, icd10cm_phecode_dict):
+    label_record = []
+    for i in tqdm(range(len(source_record))):
+        label_patient = []
+        for k in range(len(source_record[i])):
+            label_visit = []
+            for source_id in source_record[i][k]:
+                dict_type, icd_code = lookup_omop_icd(source_id, omop_icd_dict)
+                phecode = lookup_icd_phecode(dict_type, icd_code, icd10_phecode_dict, icd10cm_phecode_dict)
+                label_visit.append(phecode)
+            if len(label_visit) > 0:
+                label_patient.append(label_visit)
+        label_record.append(label_patient)
+    
+    return label_record
+
+def lookup_omop_icd(source_id, omop_icd_dict):
+    return omop_icd_dict[source_id] # return dict_type, icd_code
+
+def lookup_icd_phecode(dict_type, icd_code, icd10_phecode_dict, icd10cm_phecode_dict):
+    if dict_type == "ICD10":
+        phecode = icd10_phecode_dict[icd_code]
+    elif dict_type == "ICD10CM":
+        phecode = icd10cm_phecode_dict[icd_code]
+    
+    return phecode
+
+def convert_med2vec_format(standard_record):
+    med2vec_record = []
+
+    print("convert patient record into Med2Vec pacakage compatiable format")
+    for i in tqdm(range(len(standard_record))):
+        for standard_visit in standard_record[i]:
+            med2vec_record.append(standard_visit)
+        if i != (len(standard_record) - 1):
+            med2vec_record.append([-1])
+
+    return med2vec_record
+
+def convert_phedvec_format(standard_record, label):
+    assert len(standard_record) == len(label), "Length of the standard record and label must be the same"
+    phedvec_record = []
+    phedvec_label = []
+
+    for i in tqdm(range(len(standard_record))):
+        for standard_visit in standard_record[i]:
+            phedvec_record.append(standard_visit)
+
+    for i in tqdm(range(len(label))):
+        for l in label[i]:
+            phedvec_label.append(l)
+
+    return [phedvec_record, phedvec_label]
