@@ -37,20 +37,20 @@ class DataProcessor(object):
         else:
             print("No concepts to remove from the patient record")
 
-        print()
-        standard_record, source_record = process_record(record_df)
+        print("processing record...")
+        standard_record, source_record = process_record(record_df) # this is the bottleneck process
         self.standard_record, self.source_record = filter_record(standard_record, 
-        source_record, self.omop_icd_dict)
+        source_record, self.omop_icd_dict) 
 
     def labelRecord(self):
         print("generate phecode label based on omop_source_id")
         self.label = label_record(self.source_record, self.omop_icd_dict, 
         self.icd10_phecode_dict, self.icd10cm_phecode_dict)
 
-    def convertRecord(self):
+    def convertRecord(self, padding=False):
         self.concept2id = build_dict(self.standard_record)
 
-        self.med2vec_format = convert_med2vec_format(self.standard_record, self.concept2id)
+        self.med2vec_format = convert_med2vec_format(self.standard_record, self.concept2id, padding=padding)
         self.phedvec_format = convert_phedvec_format(self.standard_record, self.label, self.concept2id)
 
     def buildDict_ICDPhecode(self):
@@ -140,21 +140,24 @@ def read_icd_omop(data_dir):
 def build_ICD9phecode_dict(icd9_map):
     icd9_dict = dict()
     for i in tqdm(range(icd9_map.shape[0])):
-        icd9_dict.update({icd9_map["icd9"][i] : icd9_map["phecode"][i]})
+        if np.isnan(icd9_map["phecode"][i]) != True:
+            icd9_dict.update({icd9_map["icd9"][i] : icd9_map["phecode"][i]})
         
     return icd9_dict
 
 def build_ICD10phecode_dict(icd10_map):
     icd10_dict = dict()
     for i in tqdm(range(icd10_map.shape[0])):
-        icd10_dict.update({icd10_map["ICD10"][i] : icd10_map["PHECODE"][i]})
+        if np.isnan(icd10_map["PHECODE"][i]) != True:
+            icd10_dict.update({icd10_map["ICD10"][i] : icd10_map["PHECODE"][i]})
     
     return icd10_dict
 
 def build_ICD10cmphecode_dict(icd10cm_map):
     icd10cm_dict = dict()
     for i in tqdm(range(icd10cm_map.shape[0])):
-        icd10cm_dict.update({icd10cm_map["icd10cm"][i] : icd10cm_map["phecode"][i]})
+        if np.isnan(icd10cm_map["phecode"][i]) != True:
+            icd10cm_dict.update({icd10cm_map["icd10cm"][i] : icd10cm_map["phecode"][i]})
     
     return icd10cm_dict
 
@@ -204,8 +207,8 @@ def process_record(record_df):
     grouped_by_patient = record_df.groupby(["patient_id"])
     patient_group = list(grouped_by_patient.groups)
 
-    for patient in patient_group:
-        visit_under_patient = record_df.loc[grouped_by_patient.groups[patient]]
+    for i in tqdm(range(len(patient_group))):
+        visit_under_patient = record_df.loc[grouped_by_patient.groups[patient_group[i]]]
         grouped_by_visit = visit_under_patient.groupby(["visit_date"])
         visit_group = list(grouped_by_visit.groups)
         
@@ -284,7 +287,7 @@ def lookup_icd_phecode(dict_type, icd_code, icd10_phecode_dict, icd10cm_phecode_
     
     return phecode
 
-def convert_med2vec_format(standard_record, concept2id):
+def convert_med2vec_format(standard_record, concept2id, padding=False):
     med2vec_record = []
 
     print("convert patient record into Med2Vec pacakage compatiable format")
@@ -294,6 +297,9 @@ def convert_med2vec_format(standard_record, concept2id):
             med2vec_record.append(coded_visit)
         if i != (len(standard_record) - 1):
             med2vec_record.append([-1])
+    
+    if padding:
+        med2vec_record = tf.keras.preprocessing.sequence.pad_sequences(med2vec_record, padding="post")
 
     return med2vec_record
 
