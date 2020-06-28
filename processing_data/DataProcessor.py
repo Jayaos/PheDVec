@@ -21,6 +21,7 @@ class DataProcessor(object):
         self.source_record = None
 
         self.concept2id = None
+        self.phecode2id = None
         self.med2vec_format = None
         self.phedvec_format = None
 
@@ -42,16 +43,16 @@ class DataProcessor(object):
         self.standard_record, self.source_record = filter_record(standard_record, 
         source_record, self.omop_icd_dict) 
 
-    def labelRecord(self):
-        print("generate phecode label based on omop_source_id")
-        self.label = label_record(self.source_record, self.omop_icd_dict, 
+    def convertRecord(self, padding=False):
+        print("generate phecode label based on omop_source_id...")
+        label_source = label_record(self.source_record, self.omop_icd_dict, 
         self.icd10_phecode_dict, self.icd10cm_phecode_dict)
 
-    def convertRecord(self, padding=False):
+        self.phecode2id = build_dict(label_source)
         self.concept2id = build_dict(self.standard_record)
 
         self.med2vec_format = convert_med2vec_format(self.standard_record, self.concept2id, padding=padding)
-        self.phedvec_format = convert_phedvec_format(self.standard_record, self.label, self.concept2id)
+        self.phedvec_format = convert_phedvec_format(self.standard_record, label_source, self.concept2id, self.phecode2id)
 
     def buildDict_ICDPhecode(self):
 
@@ -76,8 +77,9 @@ class DataProcessor(object):
         self.omop_icd_dict = build_OMOPICD_dict(icd_omop, icd_phecode_set) 
 
     def saveResults(self):
-        print("save concept2id in the specified dir")
-        save_dict(self.concept2id, self.config.dir.save_dir)
+        print("save concept2id and phecode2id in the specified dir")
+        save_dict(self.concept2id, "concept2id.pkl", self.config.dir.save_dir)
+        save_dict(self.phecode2id, "phecode2id.pkl", self.config.dir.save_dir)
 
         print("save training data in the specified dir")
         save_data(self.med2vec_format, self.config.dir.save_dir)
@@ -141,7 +143,7 @@ def build_ICD9phecode_dict(icd9_map):
     icd9_dict = dict()
     for i in tqdm(range(icd9_map.shape[0])):
         if np.isnan(icd9_map["phecode"][i]) != True:
-            icd9_dict.update({icd9_map["icd9"][i] : icd9_map["phecode"][i]})
+            icd9_dict.update({icd9_map["icd9"][i] : truncate_decimal(icd9_map["phecode"][i], decimal=1)})
         
     return icd9_dict
 
@@ -149,7 +151,7 @@ def build_ICD10phecode_dict(icd10_map):
     icd10_dict = dict()
     for i in tqdm(range(icd10_map.shape[0])):
         if np.isnan(icd10_map["PHECODE"][i]) != True:
-            icd10_dict.update({icd10_map["ICD10"][i] : icd10_map["PHECODE"][i]})
+            icd10_dict.update({icd10_map["ICD10"][i] : truncate_decimal(icd10_map["PHECODE"][i], decimal=1)})
     
     return icd10_dict
 
@@ -157,7 +159,7 @@ def build_ICD10cmphecode_dict(icd10cm_map):
     icd10cm_dict = dict()
     for i in tqdm(range(icd10cm_map.shape[0])):
         if np.isnan(icd10cm_map["phecode"][i]) != True:
-            icd10cm_dict.update({icd10cm_map["icd10cm"][i] : icd10cm_map["phecode"][i]})
+            icd10cm_dict.update({icd10cm_map["icd10cm"][i] : truncate_decimal(icd10cm_map["phecode"][i], decimal=1)})
     
     return icd10cm_dict
 
@@ -264,6 +266,7 @@ def label_record(source_record, omop_icd_dict, icd10_phecode_dict, icd10cm_pheco
                 dict_type, icd_code = lookup_omop_icd(source_id, omop_icd_dict)
                 phecode = lookup_icd_phecode(dict_type, icd_code, icd10_phecode_dict, icd10cm_phecode_dict)
                 label_visit.append(phecode)
+            label_visit = list(set(label_visit))
             if len(label_visit) > 0:
                 label_patient.append(label_visit)
         label_record.append(label_patient)
@@ -303,7 +306,7 @@ def convert_med2vec_format(standard_record, concept2id, padding=False):
 
     return med2vec_record
 
-def convert_phedvec_format(standard_record, label, concept2id):
+def convert_phedvec_format(standard_record, label, concept2id, pheocde2id):
     assert len(standard_record) == len(label), "Length of the standard record and label must be the same"
     phedvec_record = []
     phedvec_label = []
@@ -315,9 +318,13 @@ def convert_phedvec_format(standard_record, label, concept2id):
 
     for i in tqdm(range(len(label))):
         for l in label[i]:
-            phedvec_label.append(l)
+            coded_label = apply_concept2id(l, phecode2id)
+            phedvec_label.append(coded_label)
 
     return [phedvec_record, phedvec_label]
+
+def truncate_decimal(values, decimal=0):
+    return np.trunc(values*10**decimal)/(10**decimal)
 
 def apply_concept2id(visit, concept2id):
     converted_visit = []
@@ -326,8 +333,8 @@ def apply_concept2id(visit, concept2id):
     
     return converted_visit
 
-def save_dict(mydict, save_dir):
-    with open(os.path.join(save_dir, "concept2id.pkl"), 'wb') as f:
+def save_dict(mydict, name, save_dir):
+    with open(os.path.join(save_dir, name), 'wb') as f:
         pickle.dump(mydict, f)
 
 def save_data(mydata, save_dir):
