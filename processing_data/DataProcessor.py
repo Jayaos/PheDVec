@@ -1,5 +1,7 @@
 import numpy as np 
 import pandas as pd
+import os
+import pickle
 import json
 from dotmap import DotMap
 import tensorflow as tf
@@ -78,12 +80,12 @@ class DataProcessor(object):
 
     def saveResults(self):
         print("save concept2id and phecode2id in the specified dir")
-        save_dict(self.concept2id, "concept2id.pkl", self.config.dir.save_dir)
-        save_dict(self.phecode2id, "phecode2id.pkl", self.config.dir.save_dir)
+        save_data(self.concept2id, "concept2id.pkl", self.config.dir.save_dir)
+        save_data(self.phecode2id, "phecode2id.pkl", self.config.dir.save_dir)
 
         print("save training data in the specified dir")
-        save_data(self.med2vec_format, self.config.dir.save_dir)
-        save_data(self.phedvec_format, self.config.dir.save_dir)
+        save_data(self.med2vec_format, "med2vec_training.pkl",self.config.dir.save_dir)
+        save_data(self.phedvec_format, "phedvec_training.pkl",self.config.dir.save_dir)
 
 def set_config(json_file):
     """
@@ -306,7 +308,7 @@ def convert_med2vec_format(standard_record, concept2id, padding=False):
 
     return med2vec_record
 
-def convert_phedvec_format(standard_record, label, concept2id, pheocde2id):
+def convert_phedvec_format(standard_record, label, concept2id, phecode2id):
     assert len(standard_record) == len(label), "Length of the standard record and label must be the same"
     phedvec_record = []
     phedvec_label = []
@@ -333,10 +335,6 @@ def apply_concept2id(visit, concept2id):
     
     return converted_visit
 
-def save_dict(mydict, name, save_dir):
+def save_data(mydata, name, save_dir):
     with open(os.path.join(save_dir, name), 'wb') as f:
-        pickle.dump(mydict, f)
-
-def save_data(mydata, save_dir):
-    with open(os.path.join(save_dir, "concept2id.pkl"), 'wb') as f:
-        pickle.dump(mydict, f)
+        pickle.dump(mydata, f)
