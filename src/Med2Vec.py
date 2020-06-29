@@ -66,7 +66,9 @@ class Med2Vec(tf.keras.Model):
 
     def train(self, num_epochs, batch_size, buffer_size):
         cost_avg = tf.keras.metrics.Mean()
+        print("build tensorflow dataset...")
         dataset = tf.data.Dataset.from_tensor_slices(self.training_data).shuffle(buffer_size).batch(batch_size)
+        print("start training...")
         for epoch in range(num_epochs):
             total_batch = int(np.ceil(len(self.training_data)) / batch_size)
             progbar = tf.keras.utils.Progbar(total_batch)
