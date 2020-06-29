@@ -64,7 +64,7 @@ class Med2Vec(tf.keras.Model):
         
         return tf.reduce_mean(emb_cost)
 
-    def train(self, num_epochs, batch_size, buffer_size, save_dir):
+    def train(self, num_epochs, batch_size, buffer_size):
         cost_avg = tf.keras.metrics.Mean()
         dataset = tf.data.Dataset.from_tensor_slices(self.training_data).shuffle(buffer_size).batch(batch_size)
         for epoch in range(num_epochs):
@@ -88,7 +88,14 @@ class Med2Vec(tf.keras.Model):
                 print("Epoch {}: Loss: {:.4f}".format(epoch+1, avg_loss))
                 self.epoch_loss_avg.append(avg_loss.numpy)
                 
-        self.saveResults(save_dir, epoch, avg_loss)
+        self.saveResults()
+    
+    def saveResults(self):
+        print("save trained embedding...")
+        save_variable(self.embedding, "med2vec_emb.npy", self.config.dir.save_dir)
+        print("save avg loss record...")
+        save_loss_record(self.epoch_loss_avg, "training_loss_record.txt", self.config.dir.save_dir)
+
 
 def setConfig(json_file):
     """
@@ -133,3 +140,13 @@ def load_data(data_dir):
     with open(data_dir, "rb") as f:
         mylist = pickle.load(f)
     return mylist
+
+def save_variable(variable_matrix, name, save_dir):
+    np.save(os.path.join(save_dir, name), variable_matrix)
+
+def save_loss_record(loss_record, name, save_dir):
+    with open(os.path.join(save_dir, name), "w") as f:
+        for i in range(len(loss_record)):
+            f.write(loss_record[i])
+            f.write("\n")
+        
