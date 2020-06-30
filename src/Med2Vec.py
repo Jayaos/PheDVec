@@ -64,18 +64,16 @@ class Med2Vec(tf.keras.Model):
         
         return tf.reduce_mean(emb_cost)
 
-    def train(self, num_epochs, batch_size, buffer_size):
+    def train(self, num_epochs, batch_size):
         cost_avg = tf.keras.metrics.Mean()
-        print("build tensorflow dataset...")
-        dataset = tf.data.Dataset.from_tensor_slices(self.training_data).shuffle(buffer_size).batch(batch_size)
         print("start training...")
         for epoch in range(num_epochs):
             total_batch = int(np.ceil(len(self.training_data)) / batch_size)
             progbar = tf.keras.utils.Progbar(total_batch)
 
-            for one_batch in dataset:
+            for i in random.sample(range(total_batch), total_batch): # shuffling the data 
 
-                x, mask, i_vec, j_vec = padMatrix(one_batch, len(self.concept2id))
+                x, mask, i_vec, j_vec = padMatrix(self.training_data[batch_size * i:batch_size * (i+1)], len(self.concept2id))
 
                 with tf.GradientTape() as tape:
                     batch_cost = tf.add(self.computeConceptCost(i_vec, j_vec), 
@@ -91,7 +89,7 @@ class Med2Vec(tf.keras.Model):
                 self.epoch_loss_avg.append(avg_loss.numpy)
                 
         self.saveResults()
-    
+
     def saveResults(self):
         print("save trained embedding...")
         save_variable(self.embedding, "med2vec_emb.npy", self.config.dir.save_dir)
@@ -131,7 +129,7 @@ def padMatrix(records, num_codes):
             pickTwo(record, i_vec, j_vec)
             mask[idx] = 1.
 
-    return x.astype("float32"), mask.astype("float32"), i_vec, j_vec
+    return x.astype("float32"), mask.astype("float32"), np.array(i_vec).astype("int32"), np.array(j_vec).astype("int32")
 
 def loadDictionary(data_dir):
     with open(data_dir, 'rb') as f:
