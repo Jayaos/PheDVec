@@ -11,9 +11,9 @@ import os
 class Med2Vec(tf.keras.Model):
     def __init__(self, config_dir):
         super(Med2Vec, self).__init__()
-        self.config = setConfig(config_dir)
+        self.config = set_config(config_dir)
         self.optimizer = tf.keras.optimizers.Adadelta(self.config.hparams.learning_rate)
-        self.concept2id = loadDictionary(self.config.data.concept2id)
+        self.concept2id = load_dictionary(self.config.data.concept2id)
         self.training_data = None        
         self.visit_activation = tf.keras.layers.Activation(activation=tf.keras.activations.relu)
         self.softmax_prediction = tf.keras.layers.Dense(len(self.concept2id), input_shape=(self.config.hparams.emb_dim,),
@@ -73,7 +73,7 @@ class Med2Vec(tf.keras.Model):
 
             for i in random.sample(range(total_batch), total_batch): # shuffling the data 
 
-                x, mask, i_vec, j_vec = padMatrix(self.training_data[batch_size * i:batch_size * (i+1)], len(self.concept2id))
+                x, mask, i_vec, j_vec = pad_matrix(self.training_data[batch_size * i:batch_size * (i+1)], len(self.concept2id))
 
                 with tf.GradientTape() as tape:
                     batch_cost = tf.add(self.computeConceptCost(i_vec, j_vec), 
@@ -97,7 +97,7 @@ class Med2Vec(tf.keras.Model):
         save_loss_record(self.epoch_loss_avg, "training_loss_record.txt", self.config.dir.save_dir)
 
 
-def setConfig(json_file):
+def set_config(json_file):
     """
     Get the config from a json file
     """
@@ -108,7 +108,7 @@ def setConfig(json_file):
     config = DotMap(config_dict)
     return config
 
-def pickTwo(record, i_vec, j_vec):
+def pick_two(record, i_vec, j_vec):
     for first in record:
         for second in record:
             if first == second: 
@@ -116,7 +116,7 @@ def pickTwo(record, i_vec, j_vec):
             i_vec.append(first)
             j_vec.append(second)
 
-def padMatrix(records, num_codes):
+def pad_matrix(records, num_codes):
     n_samples = len(records)
     i_vec = []
     j_vec = []
@@ -126,12 +126,12 @@ def padMatrix(records, num_codes):
     for idx, record in enumerate(records):
         if record[0] != -1:
             x[idx][record] = 1.
-            pickTwo(record, i_vec, j_vec)
+            pick_two(record, i_vec, j_vec)
             mask[idx] = 1.
 
     return x.astype("float32"), mask.astype("float32"), np.array(i_vec).astype("int32"), np.array(j_vec).astype("int32")
 
-def loadDictionary(data_dir):
+def load_dictionary(data_dir):
     with open(data_dir, 'rb') as f:
         my_dict = pickle.load(f)
     return my_dict
@@ -142,11 +142,11 @@ def load_data(data_dir):
     return mylist
 
 def save_variable(variable_matrix, name, save_dir):
-    np.save(os.path.join(save_dir, name), variable_matrix)
+    np.save(os.path.join(save_dir, name), np.array(variable_matrix.read_value()))
 
 def save_loss_record(loss_record, name, save_dir):
     with open(os.path.join(save_dir, name), "w") as f:
         for i in range(len(loss_record)):
-            f.write(loss_record[i])
+            f.write(str(loss_record[i]))
             f.write("\n")
         
