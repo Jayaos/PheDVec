@@ -15,7 +15,7 @@ PhedVec is introduced in the following [paper](https://scholar.google.com/citati
 2. Item 2
 3. Item 3
 
-## Learning Baseline Medical Concept Representations (Med2Vec, GloVe, and SkipGram)
+## Learning Baseline Medical Concept Representations
 
 ### Implementing Med2Vec
 [Med2Vec](https://www.kdd.org/kdd2016/subtopic/view/multi-layer-representation-learning-for-medical-concepts) is a multi-layer representation learning tool for learning code representations and visit representations from electronic health records, which is developed by [Choi et al.](https://scholar.google.com/citations?user=GUlGIPkAAAAJ&hl=en&oi=ao)
