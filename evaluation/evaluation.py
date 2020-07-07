@@ -2,10 +2,11 @@ import numpy as np
 from dotmap import DotMap
 import json
 import pickle
+from collections import OrderedDict
+from sklearn.metrics import pairwise_distances
 
 class EvaluateMCR(object):
     """A class for evaluating different MCRs"""
-
     def __init__(self, json_dir):
         self.config = set_config(json_dir)
         self.conceptset_dict = dict()
@@ -16,6 +17,26 @@ class EvaluateMCR(object):
         self.skipgram_emb = None
         self.med2vec_emb = None
         self.phedvec_emb = None
+
+        self.glove_simmat = None
+        self.skipgram_simmat = None
+        self.med2vec_simmat = None
+        self.phedvec_simmat = None
+
+        self.glove_precision = OrderedDict()
+        self.skipgram_precision = OrderedDict()
+        self.med2vec_precision = OrderedDict()
+        self.phedvec_precision = OrderedDict()
+
+        self.glove_recall = OrderedDict()
+        self.skipgram_recall = OrderedDict()
+        self.med2vec_recall = OrderedDict()
+        self.phedvec_recall = OrderedDict()
+
+        self.glove_F1score = OrderedDict()
+        self.skipgram_F1score = OrderedDict()
+        self.med2vec_F1score = OrderedDict()
+        self.phedvec_F1score = OrderedDict()
 
     def setConceptdict(self):
         """intersection concept dict between emb and phenotypes"""
@@ -50,12 +71,41 @@ class EvaluateMCR(object):
         self.med2vec_emb = rebuild_intersection_emb(self.concept2id, concept2id_med2vec, med2vec_emb_raw)
         self.phedvec_emb = rebuild_intersection_emb(self.concept2id, concept2id_phedvec, phedvec_emb_raw)
 
-        
     def buildSimilarityMatrix(self):
-        pass
+        self.glove_simmat = 1 - pairwise_distances(self.glove_emb, metric="cosine")
+        self.skipgram_simmat = 1 - pairwise_distances(self.skipgram_emb, metric="cosine")
+        self.med2vec_simmat = 1 - pairwise_distances(self.med2vec_emb, metric="cosine")
+        self.phedvec_simmat = 1 - pairwise_distances(self.phedvec_emb, metric="cosine")
+        
+    def computeF1score(self):
+        unique_conceptset = list(self.conceptset_dict.keys())
 
-    def computeFscore(self, k, mode):
-        pass
+        print("Compute F1-score for GloVe")
+        for conceptset in unique_conceptset:
+            precision = self.glove_precision[conceptset]
+            recall = self.glove_recall[conceptset]
+            F1score = 2 * ((precision * recall) / (precision + recall))
+            self.glove_F1score[conceptset] = F1score
+
+    def computePrecision(self, k, mode):
+        unique_conceptset = list(self.conceptset_dict.keys())
+
+        print("Compute precision for GloVe...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_precision = compute_precision(candidate_concepts, k, self.glove_simmat, 
+                                      self.concept2id, mode)
+            self.glove_precision.update({conceptset : avg_precision})
+
+    def computeRecall(self, k, mode):
+        unique_conceptset = list(self.conceptset_dict.keys())
+
+        print("Compute recall for GloVe...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_recall = compute_recall(candidate_concepts, k, self.glove_simmat, 
+                                      self.concept2id, mode)
+            self.glove_recall.update({conceptset : avg_recall})
 
 def set_config(json_file):
     """
@@ -81,7 +131,56 @@ def load_dictionary(data_dir):
     return my_dict
 
 def build_dict(my_list):
-    return 
+    my_dict = dict()
+
+    for i in range(len(my_list)):
+        my_dict[my_list[i]] = i
+
+    return my_dict
 
 def rebuild_intersection_emb(intersection_dict, concept2id, emb_matrix):
-    return
+    emb_dim = emb_matrix.shape[1]
+    intersection_emb_matrix = np.zeros((len(intersection_dict), emb_dim))
+
+    for concept in list(intersection_dict.keys()):
+        intersection_emb_matrix[intersection_dict[concept]] = emb_matrix[concept2id[concept]]
+    
+    return intersection_emb_matrix
+
+def compute_precision(candidate_list, k, simmat, simmat_dict, mode):
+    candidate_index = set()
+    candidate_num = k
+    for concept in candidate_list:
+        candidate_index.add(simmat_dict[concept])
+    
+    if mode == "percent":
+        candidate_num = int(np.ceil(len(candidate_list) * (k / 100)))
+    
+    precision_list = []
+    for concept in candidate_list:
+        retrieved_concepts = set(np.argsort(simmat[simmat_dict[concept]])[(-(candidate_num)-1):-1])
+        relevants = len(candidate_index.intersection(retrieved_concepts))
+        precision_list.append(relevants)
+    
+    avg_precision = np.average(np.array(precision_list) / candidate_num)
+    
+    return avg_precision
+
+def compute_recall(candidate_list, k, simmat, simmat_dict, mode):
+    candidate_index = set()
+    candidate_num = k
+    for concept in candidate_list:
+        candidate_index.add(simmat_dict[concept])
+    
+    if mode == "percent":
+        candidate_num = int(np.ceil(len(candidate_list) * (k / 100)))
+    
+    recall_list = []
+    for concept in candidate_list:
+        retrieved_concepts = set(np.argsort(simmat[simmat_dict[concept]])[(-(candidate_num)-1):-1])
+        relevants = len(candidate_index.intersection(retrieved_concepts))
+        recall_list.append(relevants)
+    
+    avg_recall = np.average(np.array(recall_list) / len(candidate_list))
+    
+    return avg_recall
