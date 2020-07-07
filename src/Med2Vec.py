@@ -55,7 +55,7 @@ class Med2Vec(tf.keras.Model):
         return visit_cost
 
     @tf.function
-    def computeConceptCost(self, i_vec, j_vec): # serious problem here take a look
+    def computeConceptCost(self, i_vec, j_vec): 
         logEps = tf.constant(1e-8)
         preVec = tf.keras.activations.relu(self.embedding)
         norms = tf.reduce_sum(tf.exp(tf.matmul(preVec, preVec, transpose_b=True)), axis=1)

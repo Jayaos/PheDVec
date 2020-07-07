@@ -8,9 +8,9 @@ import gensim
 from tqdm import tqdm
 import os
 
-class PheDVec(tf.keras.Model):
+class PhedVec(tf.keras.Model):
     def __init__(self, config_dir):
-        super(PheDVec, self).__init__()
+        super(PhedVec, self).__init__()
         self.config = setConfig(config_dir)
         self.optimizer = tf.keras.optimizers.Adadelta(learning_rate=0.01)
         self.concept2id = None

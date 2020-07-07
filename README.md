@@ -25,3 +25,6 @@ PhedVec is introduced in the following [paper](https://scholar.google.com/citati
 ### Implementing SkipGram
 
 ## Evaluating Learned Medical Concept Representations
+
+## Acknoledgement
+We have been working on the package for distributed training.
