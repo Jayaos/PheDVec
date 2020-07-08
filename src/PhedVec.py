@@ -13,7 +13,7 @@ class PhedVec(tf.keras.Model):
         super(PhedVec, self).__init__()
         self.config = set_config(config_dir)
         self.optimizer = tf.keras.optimizers.Adadelta(learning_rate=0.01)
-        self.concept2id = None
+        self.concept2id = load_data(self.config.data.concept2id)
         self.training_data = None
         self.labels = None
         self.epoch_loss_avg = [] # record avg loss for all epochs
@@ -21,22 +21,17 @@ class PhedVec(tf.keras.Model):
         self.visit_activation = tf.keras.layers.Activation(activation=tf.keras.activations.tanh)
         self.phecode_classifier = tf.keras.layers.Dense(self.config.hparams.num_pheclass, 
         name="phe_classifier", activation=tf.keras.activations.softmax) 
-        
-    def fitToData(self):
-        with tf.device("/cpu:0"):
-            patient_data, labels = readPatientRecord(self.config.data.patient_record)
-            unique_concepts = getUniqueSet(patient_data)
-            self.concept2id = buildDict(list(unique_concepts))
-            self.training_data = processPatientRecord(patient_data, self.concept2id)
-            self.labels = padLabels(labels)
-        print("fitting process has been completed")
-        
+
+    def loadData(self):
+        print("load training data...")
+        self.training_data, self.labels = load_data(self.config.data.training_data)
+
     def initModel(self):
         if self.concept2id == None: 
-            print("set concept2id before initialzing the model")
+            print("Load concept2id before initialzing the model")
 
         print("initialize model...")
-        self.embedding = tf.Variable(tf.random.uniform([len(self.concept2id)+1, 1000], 0.1, -0.1))
+        self.embedding = tf.Variable(tf.random.uniform([len(self.concept2id), self.config.hparams.emb_dim], 0.1, -0.1))
         
     @tf.function
     def getVisitRep(self, x_batch):
@@ -57,7 +52,7 @@ class PhedVec(tf.keras.Model):
     
     @tf.function
     def computeConceptCost(self, i_vec, j_vec): 
-        logEps = tf.constant(1e-5)
+        logEps = tf.constant(1e-8)
         norms = tf.reduce_sum(tf.math.exp(tf.matmul(self.embedding, self.embedding, transpose_b=True)), axis=1)
         denoms = tf.math.exp(tf.reduce_sum(tf.multiply(tf.nn.embedding_lookup(self.embedding, i_vec), 
                                                        tf.nn.embedding_lookup(self.embedding, j_vec)), axis=1))
@@ -68,29 +63,26 @@ class PhedVec(tf.keras.Model):
         batch_cost = tf.math.add(self.computeVisitCost(x_batch, label_batch), self.computeConceptCost(i_vec, j_vec))
         return batch_cost
     
-    def saveResults(self, save_dir, epoch, avg_loss):
-        np.save(os.path.join(save_dir, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
+    def saveResults(self, epoch, avg_loss):
+        print("save trained embedding...")
+        np.save(os.path.join(self.config.path.output_path, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
                 np.array(self.embedding[:]))
-        saveDictionary(self.concept2id, save_dir, "concept2id.pkl")
-        save_loss(self.epoch_loss_avg, save_dir)
-        print("Embedding results have been saved")
+        print("save avg loss record...")
+        save_loss_record(self.epoch_loss_avg, "training_loss_PhedVec.txt", self.config.path.output_path)
 
-    def train(self, num_epochs, batch_size, buffer_size, save_dir):
+    def train(self, num_epochs, batch_size):
         cost_avg = tf.keras.metrics.Mean()
-        dataset = tf.data.Dataset.from_tensor_slices((self.training_data, self.labels)).shuffle(buffer_size).batch(batch_size)
+        print("start training...")
         for epoch in range(num_epochs):
-            print("shuffle data and prepare batch for epoch...")
             total_batch = int(np.ceil(len(self.training_data)) / batch_size)
             progbar = tf.keras.utils.Progbar(total_batch)
 
-            for one_batch in dataset:
-                i_vec = []
-                j_vec = []
-                x_batch, label_batch = one_batch
-                for x in np.array(x_batch):
-                    pickij(x, i_vec, j_vec)
+            for i in random.sample(range(total_batch), total_batch): # shuffling the data 
+                x = self.training_data[batch_size * i:batch_size * (i+1)]
+                i_vec, j_vec, label = prepare_batch(x, self.labels[batch_size * i:batch_size * (i+1)], self.config.hparams.phecode_num)
+
                 with tf.GradientTape() as tape:
-                    batch_cost = self.computeTotalCost(x_batch, i_vec, j_vec, label_batch)
+                    batch_cost = self.computeTotalCost(x, i_vec, j_vec, label)
                 gradients = tape.gradient(batch_cost, self.trainable_variables)
                 self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
                 cost_avg(batch_cost)
@@ -100,8 +92,8 @@ class PhedVec(tf.keras.Model):
                 avg_loss = cost_avg.result()
                 print("Epoch {}: Loss: {:.4f}".format(epoch+1, avg_loss))
                 self.epoch_loss_avg.append(avg_loss.numpy)
-                
-        self.saveResults(save_dir, epoch, avg_loss)
+
+        self.saveResults(epoch, avg_loss)
 
 # Functions 
 def set_config(json_file):
@@ -115,87 +107,39 @@ def set_config(json_file):
     config = DotMap(config_dict)
     return config
 
-def save_loss(lossfile, save_dir):
-    with open(os.path.join(save_dir, "training_loss.txt"), "w") as f:
-        for i in range(len(lossfile)):
-            f.write("epoch {} : {}\n".format(i+1, lossfile[i]))
-
-def shuffleData(data1, data2):
-    shuffle_index = list(range(data1.shape[0]))
-    random.shuffle(shuffle_index)
-    
-    data1_shuffled = tf.gather(data1, shuffle_index)
-    data2_shuffled = tf.gather(data2, shuffle_index)
-        
-    return data1_shuffled, data2_shuffled
-
-def readPatientRecord(file_dir):
-    with open(file_dir, "rb") as f:
+def load_data(data_dir):
+    with open(data_dir, "rb") as f:
         mylist = pickle.load(f)
-    
-    patient_record = []
-    labels = []
+    return mylist
 
-    print("read patient data...")
-    for i in tqdm(range(len(mylist))):
-        patient_record.append(mylist[i][0])
-        labels.append(mylist[i][1])
-    return patient_record, labels
+def encode_multihot(labels, category_num):
+    multihot_labels = np.zeros((len(labels), category_num))
+    for idx, label in enumerate(labels):
+        multihot_labels[idx][label] = 1.
+    return multihot_labels
 
-def pickij(visit_record, i_vec, j_vec):
-    unpadded_record = visit_record[visit_record != 0]
-    for first in unpadded_record:
-        for second in unpadded_record:
-            if first == second: continue
+def prepare_batch(record, label, category_num):
+    i_vec = []
+    j_vec = []
+
+    multihot_label = encode_multihot(label, category_num)
+    for visit in record:
+        pick_two(visit, i_vec, j_vec)
+
+    return np.array(i_vec).astype("int32"), np.array(j_vec).astype("int32"), np.array(multihot_label).astype("float32")
+
+def save_loss_record(loss_record, name, save_dir):
+    with open(os.path.join(save_dir, name), "w") as f:
+        for i in range(len(loss_record)):
+            f.write(str(loss_record[i]))
+            f.write("\n")
+
+def pick_two(visit, i_vec, j_vec):
+    for first in visit:
+        for second in visit:
+            if first == second: 
+                continue
             i_vec.append(first)
             j_vec.append(second)
 
-def getUniqueSet(patient_record):
-    """--i: patient record
-    --o: list of unique concepts in the record"""
-    print("get unique concept set...")
-    unique_concept_set = set()
-    
-    for record in patient_record:
-        for concept in record:
-            unique_concept_set.add(concept)
-            
-    return unique_concept_set
-
-def buildDict(concept_list):
-    print("build concept dict...")
-    my_dict = dict()
-    for i in range(len(concept_list)):
-        my_dict.update({concept_list[i] : i + 1})
-    
-    return my_dict
-    
-def processPatientRecord(patient_record, concept2id):
-    print("process training data...")
-    print("convert concept to concept ID")
-    converted_record = convertToID(patient_record, concept2id)
-    print("pad patient record")
-    padded_record = padRecord(converted_record)
-    return padded_record
-
-def convertToID(patient_record, conncept2id):
-    converted_record = []
-    
-    for record in patient_record:
-        converted_concepts = []
-        for concept in record:
-            converted_concepts.append(conncept2id[concept])
-        converted_record.append(converted_concepts)
-    return converted_record
-
-def padRecord(patient_record, padding_option="post"):
-    padded_record = tf.keras.preprocessing.sequence.pad_sequences(patient_record, padding=padding_option)
-    return padded_record
-
-def padLabels(labels):
-    multi_hot = tf.reduce_sum(tf.one_hot(tf.ragged.constant(labels), depth=582), axis=1)
-    return multi_hot
-
-def saveDictionary(mydict, save_dir, dict_name):
-    with open(os.path.join(save_dir, dict_name), 'wb') as f:
-        pickle.dump(mydict, f)
+    return i_vec, j_vec
