@@ -308,7 +308,7 @@ def convert_med2vec_format(standard_record, concept2id, padding=False):
 
     return med2vec_record
 
-def convert_phedvec_format(standard_record, label, concept2id, phecode2id):
+def convert_phedvec_format(standard_record, label, concept2id, phecode2id, padding=False):
     assert len(standard_record) == len(label), "Length of the standard record and label must be the same"
     phedvec_record = []
     phedvec_label = []
@@ -322,6 +322,10 @@ def convert_phedvec_format(standard_record, label, concept2id, phecode2id):
         for l in label[i]:
             coded_label = apply_concept2id(l, phecode2id)
             phedvec_label.append(coded_label)
+
+    if padding:
+        phedvec_record = tf.keras.preprocessing.sequence.pad_sequences(phedvec_record, padding="post")
+        phedvec_label = tf.keras.preprocessing.sequence.pad_sequences(phedvec_label, padding="post")
 
     return [phedvec_record, phedvec_label]
 

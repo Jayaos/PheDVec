@@ -9,8 +9,12 @@ import pickle
 from collections import defaultdict
 
 class GloVe(tf.keras.Model):
-    def __init__(self, embedding_dim=256, max_vocab_size=100, scaling_factor=0.75, batch_size=512, learning_rate=0.01):
+    def __init__(self, input_path, output_path, embedding_dim=256, max_vocab_size=100, 
+    scaling_factor=0.75, batch_size=512, learning_rate=0.01):
         super(GloVe, self).__init__()
+        self.input_path = input_path
+        self.output_path = output_path
+        
         self.embedding_dim = embedding_dim
         self.max_vocab_size = max_vocab_size
         self.scaling_factor = scaling_factor

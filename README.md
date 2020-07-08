@@ -26,5 +26,5 @@ PhedVec is introduced in the following [paper](https://scholar.google.com/citati
 
 ## Evaluating Learned Medical Concept Representations
 
-## Acknoledgement
+## Acknowledgement
 We have been working on the package for distributed training.
