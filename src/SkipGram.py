@@ -85,8 +85,14 @@ def prepare_batch(record):
     i_vec = []
     j_vec = []
 
-    for first in record:
-        for second in record:
+    for visit in record:
+        pick_two(visit, i_vec, j_vec)
+
+    return np.array(i_vec).astype("int32"), np.array(j_vec).astype("int32")
+
+def pick_two(visit, i_vec, j_vec):
+    for first in visit:
+        for second in visit:
             if first == second: 
                 continue
             i_vec.append(first)
