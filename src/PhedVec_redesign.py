@@ -13,7 +13,7 @@ class PhedVec(tf.keras.Model):
         super(PhedVec, self).__init__()
         self.config = set_config(config_dir)
         self.optimizer = tf.keras.optimizers.Adadelta(learning_rate=0.01)
-        self.concept2id = None
+        self.concept2id = load_data(self.config.data.concept2id)
         self.training_data = None
         self.labels = None
         self.epoch_loss_avg = [] # record avg loss for all epochs
@@ -25,14 +25,13 @@ class PhedVec(tf.keras.Model):
     def loadData(self):
         print("load training data...")
         self.training_data, self.labels = load_data(self.config.data.training_data)
-        self.concept2id = load_data(self.config.data.concept2id)
 
     def initModel(self):
         if self.concept2id == None: 
             print("Load concept2id before initialzing the model")
 
         print("initialize model...")
-        self.embedding = tf.Variable(tf.random.uniform([len(self.concept2id), 1000], 0.1, -0.1))
+        self.embedding = tf.Variable(tf.random.uniform([len(self.concept2id), self.config.hparams.emb_dim], 0.1, -0.1))
         
     @tf.function
     def getVisitRep(self, x_batch):
@@ -64,11 +63,12 @@ class PhedVec(tf.keras.Model):
         batch_cost = tf.math.add(self.computeVisitCost(x_batch, label_batch), self.computeConceptCost(i_vec, j_vec))
         return batch_cost
     
-    def saveResults(self, save_dir, epoch, avg_loss):
-        np.save(os.path.join(save_dir, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
+    def saveResults(self, epoch, avg_loss):
+        print("save trained embedding...")
+        np.save(os.path.join(self.config.path.output_path, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
                 np.array(self.embedding[:]))
-        save_loss_record(self.epoch_loss_avg, save_dir)
-        print("Embedding results have been saved")
+        print("save avg loss record...")
+        save_loss_record(self.epoch_loss_avg, "training_loss_PhedVec.txt", self.config.path.output_path)
 
     def train(self, num_epochs, batch_size):
         cost_avg = tf.keras.metrics.Mean()
@@ -79,7 +79,7 @@ class PhedVec(tf.keras.Model):
 
             for i in random.sample(range(total_batch), total_batch): # shuffling the data 
                 x = self.training_data[batch_size * i:batch_size * (i+1)]
-                i_vec, j_vec, label = prepare_batch(x, self.config.hparams.phecode_num)
+                i_vec, j_vec, label = prepare_batch(x, self.labels[batch_size * i:batch_size * (i+1)], self.config.hparams.phecode_num)
 
                 with tf.GradientTape() as tape:
                     batch_cost = self.computeTotalCost(x, i_vec, j_vec, label)
@@ -93,7 +93,7 @@ class PhedVec(tf.keras.Model):
                 print("Epoch {}: Loss: {:.4f}".format(epoch+1, avg_loss))
                 self.epoch_loss_avg.append(avg_loss.numpy)
 
-        self.saveResults(save_dir, epoch, avg_loss)
+        self.saveResults(epoch, avg_loss)
 
 # Functions 
 def set_config(json_file):

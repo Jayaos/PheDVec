@@ -54,7 +54,7 @@ class DataProcessor(object):
         self.concept2id = build_dict(self.standard_record)
 
         self.med2vec_format = convert_med2vec_format(self.standard_record, self.concept2id, padding=padding)
-        self.phedvec_format = convert_phedvec_format(self.standard_record, label_source, self.concept2id, self.phecode2id)
+        self.phedvec_format = convert_phedvec_format(self.standard_record, label_source, self.concept2id, self.phecode2id, padding=padding)
 
     def buildDict_ICDPhecode(self):
 

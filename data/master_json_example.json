@@ -1,0 +1,5 @@
+{"hparams" : {"learning_rate" : 0.01,
+"emb_dim" : 2000},
+"path" : {"output_path" : "outputpath"},
+"data" : {"concept2id" : "concept2id_dir",
+    "training_data" : "training_data_dir"}}

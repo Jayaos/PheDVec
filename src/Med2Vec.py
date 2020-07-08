@@ -94,7 +94,7 @@ class Med2Vec(tf.keras.Model):
         print("save trained embedding...")
         save_variable(self.embedding, "med2vec_emb.npy", self.config.dir.save_dir)
         print("save avg loss record...")
-        save_loss_record(self.epoch_loss_avg, "training_loss_record.txt", self.config.dir.save_dir)
+        save_loss_record(self.epoch_loss_avg, "training_loss_Med2Vec.txt", self.config.dir.save_dir)
 
 
 def set_config(json_file):
@@ -149,4 +149,3 @@ def save_loss_record(loss_record, name, save_dir):
         for i in range(len(loss_record)):
             f.write(str(loss_record[i]))
             f.write("\n")
-        
