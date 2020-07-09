@@ -62,13 +62,6 @@ class PhedVec(tf.keras.Model):
     def computeTotalCost(self, x_batch, i_vec, j_vec, label_batch):
         batch_cost = tf.math.add(self.computeVisitCost(x_batch, label_batch), self.computeConceptCost(i_vec, j_vec))
         return batch_cost
-    
-    def saveResults(self, epoch, avg_loss):
-        print("save trained embedding...")
-        np.save(os.path.join(self.config.path.output_path, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
-                np.array(self.embedding[:]))
-        print("save avg loss record...")
-        save_loss_record(self.epoch_loss_avg, "training_loss_PhedVec.txt", self.config.path.output_path)
 
     def train(self, num_epochs, batch_size):
         cost_avg = tf.keras.metrics.Mean()
@@ -94,6 +87,13 @@ class PhedVec(tf.keras.Model):
                 self.epoch_loss_avg.append(avg_loss.numpy)
 
         self.saveResults(epoch, avg_loss)
+
+    def saveResults(self, epoch, avg_loss):
+        print("save trained embedding...")
+        np.save(os.path.join(self.config.path.output_path, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
+                np.array(self.embedding[:]))
+        print("save avg loss record...")
+        save_loss_record(self.epoch_loss_avg, "training_loss_PhedVec.txt", self.config.path.output_path)
 
 # Functions 
 def set_config(json_file):
