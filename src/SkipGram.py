@@ -26,14 +26,13 @@ class SkipGram(tf.keras.Model):
         self.embedding = tf.Variable(tf.random.uniform([len(self.concept2id), self.config.hparams.emb_dim], 0.1, -0.1))
     
     @tf.function
-    def computeConceptCost(self, i_vec, j_vec):
+    def computeConceptCost(self, i_vec, j_vec): 
         logEps = tf.constant(1e-8)
-        norms = tf.exp(tf.reduce_sum(tf.matmul(self.embedding, self.embedding, transpose_b=True), axis=1))
-        denoms = tf.exp(tf.reduce_sum(tf.multiply(tf.gather(
-            self.embedding, i_vec), tf.gather(self.embedding, j_vec)), axis=1))
-        emb_cost = tf.negative(tf.math.log(tf.divide(denoms, tf.gather(norms, i_vec))+ logEps))
-        
-        return tf.reduce_mean(emb_cost)
+        norms = tf.reduce_sum(tf.math.exp(tf.matmul(self.embedding, self.embedding, transpose_b=True)), axis=1)
+        denoms = tf.math.exp(tf.reduce_sum(tf.multiply(tf.nn.embedding_lookup(self.embedding, i_vec), 
+                                                       tf.nn.embedding_lookup(self.embedding, j_vec)), axis=1))
+        concept_cost = tf.negative(tf.math.log((tf.divide(denoms, tf.gather(norms, i_vec)) + logEps)))
+        return tf.math.reduce_mean(concept_cost)
 
     def train(self, num_epochs, batch_size):
         cost_avg = tf.keras.metrics.Mean()
