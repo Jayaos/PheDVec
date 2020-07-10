@@ -19,7 +19,7 @@ class SkipGram(tf.keras.Model):
 
     def loadData(self):
         print("load training data...")
-        self.training_data = load_data(self.config.data.training_data)[0]
+        self.training_data = load_data(self.config.data.training_data_phedvec)[0]
 
     def initEmbedding(self):
         print("initialize model...")
@@ -60,7 +60,7 @@ class SkipGram(tf.keras.Model):
 
     def saveResults(self, epoch, avg_loss):
         print("save trained embedding...")
-        np.save(os.path.join(self.config.path.output_path, "phedvec_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
+        np.save(os.path.join(self.config.path.output_path, "skipgram_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
                 np.array(self.embedding[:]))
         print("save avg loss record...")
         save_loss_record(self.epoch_loss_avg, "training_loss_skipgram.txt", self.config.path.output_path)
