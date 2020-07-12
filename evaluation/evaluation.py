@@ -41,24 +41,17 @@ class EvaluateMCR(object):
     def setConceptdict(self):
         """intersection concept dict between emb and phenotypes"""
         conceptset_dict_raw = load_dictionary(self.config.data.conceptset_dict)
-        concept2id_glove = load_dictionary(self.config.results.concept2id_glove)
-        concept2id_skipgram = load_dictionary(self.config.results.concept2id_skipgram)
-        concept2id_med2vec = load_dictionary(self.config.results.concept2id_med2vec)
-        concept2id_phedvec = load_dictionary(self.config.results.concept2id_phedvec)
+        concept2id_raw = load_dictionary(self.config.results.concept2id)
 
-        unique_concept_conceptset = count_unique(conceptset_dict_raw)
-        unique_concept_glove = set(concept2id_glove.keys())
-        unique_concept_skipgram = set(concept2id_skipgram.keys())
-        unique_concept_med2vec = set(concept2id_med2vec.keys())
-        unique_concept_phedvec = set(concept2id_phedvec.keys())
+        unique_concept_conceptset = set(count_unique(conceptset_dict_raw))
+        unique_concept = set(concept2id_raw.keys())
 
         glove_emb_raw = np.load(self.config.results.glove_emb)
         skipgram_emb_raw = np.load(self.config.results.skipgram_emb)
         phedvec_emb_raw = np.load(self.config.results.phedvec_emb)
         med2vec_emb_raw = np.load(self.config.results.med2vec_emb)
 
-        intersection_concept = set.intersection(unique_concept_conceptset, unique_concept_glove, unique_concept_skipgram,
-        unique_concept_med2vec, unique_concept_phedvec)
+        intersection_concept = set.intersection(unique_concept_conceptset, unique_concept)
 
         for concept_set in list(conceptset_dict_raw.keys()):
             intersection = set.intersection(set(conceptset_dict_raw[concept_set]), intersection_concept)
@@ -66,10 +59,10 @@ class EvaluateMCR(object):
                 self.conceptset_dict[concept_set] = list(intersection)
 
         self.concept2id = build_dict(list(intersection_concept))
-        self.glove_emb = rebuild_intersection_emb(self.concept2id, concept2id_glove, glove_emb_raw)
-        self.skipgram_emb = rebuild_intersection_emb(self.concept2id, concept2id_skipgram, skipgram_emb_raw)
-        self.med2vec_emb = rebuild_intersection_emb(self.concept2id, concept2id_med2vec, med2vec_emb_raw)
-        self.phedvec_emb = rebuild_intersection_emb(self.concept2id, concept2id_phedvec, phedvec_emb_raw)
+        self.glove_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, glove_emb_raw)
+        self.skipgram_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, skipgram_emb_raw)
+        self.med2vec_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, med2vec_emb_raw)
+        self.phedvec_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, phedvec_emb_raw)
 
     def buildSimilarityMatrix(self):
         self.glove_simmat = 1 - pairwise_distances(self.glove_emb, metric="cosine")
