@@ -11,12 +11,11 @@ class EvaluateMCR(object):
         self.config = set_config(json_dir)
         self.conceptset_dict = dict()
 
-        self.concept2id = None
-
-        self.glove_emb = None
-        self.skipgram_emb = None
-        self.med2vec_emb = None
-        self.phedvec_emb = None
+        self.concept2id = load_dictionary(self.config.results.concept2id)
+        self.glove_emb = np.load(self.config.results.glove_emb)
+        self.skipgram_emb = np.load(self.config.results.skipgram_emb)
+        self.phedvec_emb = np.load(self.config.results.phedvec_emb)
+        self.med2vec_emb = np.load(self.config.results.med2vec_emb)
 
         self.glove_simmat = None
         self.skipgram_simmat = None
@@ -41,28 +40,16 @@ class EvaluateMCR(object):
     def setConceptdict(self):
         """intersection concept dict between emb and phenotypes"""
         conceptset_dict_raw = load_dictionary(self.config.data.conceptset_dict)
-        concept2id_raw = load_dictionary(self.config.results.concept2id)
 
         unique_concept_conceptset = set(count_unique(conceptset_dict_raw))
-        unique_concept = set(concept2id_raw.keys())
-
-        glove_emb_raw = np.load(self.config.results.glove_emb)
-        skipgram_emb_raw = np.load(self.config.results.skipgram_emb)
-        phedvec_emb_raw = np.load(self.config.results.phedvec_emb)
-        med2vec_emb_raw = np.load(self.config.results.med2vec_emb)
+        unique_concept = set(self.concept2id.keys())
 
         intersection_concept = set.intersection(unique_concept_conceptset, unique_concept)
 
         for concept_set in list(conceptset_dict_raw.keys()):
             intersection = set.intersection(set(conceptset_dict_raw[concept_set]), intersection_concept)
-            if len(intersection) > 0:
+            if len(intersection) > 1:
                 self.conceptset_dict[concept_set] = list(intersection)
-
-        self.concept2id = build_dict(list(intersection_concept))
-        self.glove_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, glove_emb_raw)
-        self.skipgram_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, skipgram_emb_raw)
-        self.med2vec_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, med2vec_emb_raw)
-        self.phedvec_emb = rebuild_intersection_emb(self.concept2id, concept2id_raw, phedvec_emb_raw)
 
     def buildSimilarityMatrix(self):
         self.glove_simmat = 1 - pairwise_distances(self.glove_emb, metric="cosine")
@@ -73,12 +60,45 @@ class EvaluateMCR(object):
     def computeF1score(self):
         unique_conceptset = list(self.conceptset_dict.keys())
 
-        print("Compute F1-score for GloVe")
+        print("Compute F1-score for GloVe...")
         for conceptset in unique_conceptset:
             precision = self.glove_precision[conceptset]
             recall = self.glove_recall[conceptset]
-            F1score = 2 * ((precision * recall) / (precision + recall))
+            if precision != 0 and recall != 0:
+                F1score = 2 * ((precision * recall) / (precision + recall))
+            else:
+                F1score = 0
             self.glove_F1score[conceptset] = F1score
+
+        print("Compute F1-score for skipgram...")
+        for conceptset in unique_conceptset:
+            precision = self.skipgram_precision[conceptset]
+            recall = self.skipgram_recall[conceptset]
+            if precision != 0 and recall != 0:
+                F1score = 2 * ((precision * recall) / (precision + recall))
+            else:
+                F1score = 0
+            self.skipgram_F1score[conceptset] = F1score
+
+        print("Compute F1-score for Med2Vec...")
+        for conceptset in unique_conceptset:
+            precision = self.med2vec_precision[conceptset]
+            recall = self.med2vec_recall[conceptset]
+            if precision != 0 and recall != 0:
+                F1score = 2 * ((precision * recall) / (precision + recall))
+            else:
+                F1score = 0
+            self.med2vec_F1score[conceptset] = F1score
+
+        print("Compute F1-score for PhedVec...")
+        for conceptset in unique_conceptset:
+            precision = self.phedvec_precision[conceptset]
+            recall = self.phedvec_recall[conceptset]
+            if precision != 0 and recall != 0:
+                F1score = 2 * ((precision * recall) / (precision + recall))
+            else:
+                F1score = 0
+            self.phedvec_F1score[conceptset] = F1score
 
     def computePrecision(self, k, mode):
         unique_conceptset = list(self.conceptset_dict.keys())
@@ -90,6 +110,27 @@ class EvaluateMCR(object):
                                       self.concept2id, mode)
             self.glove_precision.update({conceptset : avg_precision})
 
+        print("Compute precision for skipgram...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_precision = compute_precision(candidate_concepts, k, self.skipgram_simmat, 
+                                      self.concept2id, mode)
+            self.skipgram_precision.update({conceptset : avg_precision})
+
+        print("Compute precision for Med2Vec...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_precision = compute_precision(candidate_concepts, k, self.med2vec_simmat, 
+                                      self.concept2id, mode)
+            self.med2vec_precision.update({conceptset : avg_precision})
+
+        print("Compute precision for PhedVec...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_precision = compute_precision(candidate_concepts, k, self.phedvec_simmat, 
+                                      self.concept2id, mode)
+            self.phedvec_precision.update({conceptset : avg_precision})
+
     def computeRecall(self, k, mode):
         unique_conceptset = list(self.conceptset_dict.keys())
 
@@ -99,6 +140,27 @@ class EvaluateMCR(object):
             avg_recall = compute_recall(candidate_concepts, k, self.glove_simmat, 
                                       self.concept2id, mode)
             self.glove_recall.update({conceptset : avg_recall})
+
+        print("Compute recall for skipgram...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_recall = compute_recall(candidate_concepts, k, self.skipgram_simmat, 
+                                      self.concept2id, mode)
+            self.skipgram_recall.update({conceptset : avg_recall})
+
+        print("Compute recall for Med2Vec...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_recall = compute_recall(candidate_concepts, k, self.med2vec_simmat, 
+                                      self.concept2id, mode)
+            self.med2vec_recall.update({conceptset : avg_recall})
+
+        print("Compute recall for PhedVec...")
+        for conceptset in unique_conceptset:
+            candidate_concepts = self.conceptset_dict[conceptset]
+            avg_recall = compute_recall(candidate_concepts, k, self.phedvec_simmat, 
+                                      self.concept2id, mode)
+            self.phedvec_recall.update({conceptset : avg_recall})
 
 def set_config(json_file):
     """
