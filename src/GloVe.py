@@ -31,25 +31,21 @@ class GloVe(tf.keras.Model):
         self.training_data = load_data(self.config.data.training_data_phedvec)[0]
      
     def buildCoMatrix(self):
-        self.comap = defaultdict(float)
-        self.comatrix = np.zeros((self.vocab_size, self.vocab_size), dtype=np.float64)
+        self.comatrix = np.zeros((self.vocab_size, self.vocab_size), dtype=np.float32)
 
         for i in tqdm(range(len(self.training_data))):
-            record = self.training_data[i]
+            record = unpad_list(self.training_data[i])
             for p in record:
                 for k in record:
                     if p != k:
-                        self.comap[(p, k)] += 1
-        
-        for pair, count in self.comap.items():
-            self.comatrix[self.concept2id[pair[0]], self.concept2id[pair[1]]] = count
+                        self.comatrix[p, k] += 1.
 
     def initParams(self):
         with tf.device("/cpu:0"):
             """must be implemented with cpu-only env since this is sparse updating"""
-            self.target_embeddings = tf.Variable(tf.random.uniform([self.vocab_size, self.embedding_dim], 0.1, -0.1),
+            self.target_embeddings = tf.Variable(tf.random.uniform([self.vocab_size, self.config.hparams.emb_dim], 0.1, -0.1),
                                                  name="target_embeddings")
-            self.context_embeddings = tf.Variable(tf.random.uniform([self.vocab_size, self.embedding_dim], 0.1, -0.1),
+            self.context_embeddings = tf.Variable(tf.random.uniform([self.vocab_size, self.config.hparams.emb_dim], 0.1, -0.1),
                                                   name="context_embeddings")
             self.target_biases = tf.Variable(tf.random.uniform([self.vocab_size], 0.1, -0.1),
                                              name='target_biases')
@@ -79,35 +75,20 @@ class GloVe(tf.keras.Model):
 
     def computeGradients(self, x):
         with tf.GradientTape() as tape:
-            cost = self.compute_cost(x)
+            cost = self.computeCost(x)
         return cost, tape.gradient(cost, self.trainable_variables)
-
-    def prepare_batch(self):
-        i_ids = []
-        j_ids = []
-        co_occurs = []
-        comap_list = list(self.comap.items())
-
-        for pair, co_occur in comap_list:
-            i_ids.append(self.concept2id[pair[0]])
-            j_ids.append(self.concept2id[pair[1]])
-            co_occurs.append(co_occur)
-     
-        assert len(i_ids) == len(j_ids), "The length of the data are not the same"
-        assert len(i_ids) == len(co_occurs), "The length of the data are not the same"
-        return i_ids, j_ids, co_occurs
 
     def getEmbeddings(self):
         self.embeddings = self.target_embeddings + self.context_embeddings
     
-    def saveEmbeddings(self, save_dir, epoch, avg_loss):
-        self.get_embeddings()
-        np.save(os.path.join(save_dir, "glove_emb_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
+    def saveEmbeddings(self, epoch, avg_loss):
+        self.getEmbeddings()
+        np.save(os.path.join(self.config.path.output_path, "glove_emb_e{:03d}_loss{:.4f}.npy".format(epoch, avg_loss)),
                 self.embeddings)
         print("Embedding results have been saved")
 
     def train(self, num_epochs, batch_size):
-        i_ids, j_ids, co_occurs = prepare_trainingset(self.comap)
+        i_ids, j_ids, co_occurs = prepare_trainingset(self.comatrix)
         total_batch = int(np.ceil(len(i_ids) / self.batch_size))
         cost_avg = tf.keras.metrics.Mean()
 
@@ -147,16 +128,16 @@ def load_dictionary(data_dir):
         my_dict = pickle.load(f)
     return my_dict
 
-def prepare_trainingset(comap):
+def prepare_trainingset(comatrix):
     i_ids = []
     j_ids = []
     co_occurs = []
-    comap_list = list(comap.items())
 
-    for pair, co_occur in comap_list:
-        i_ids.append(self.concept2id[pair[0]])
-        j_ids.append(self.concept2id[pair[1]])
-        co_occurs.append(co_occur)
+    for i in range(comatrix.shape[0]):
+        for j in range(comatrix.shape[0]):
+            i_ids.append(i)
+            j_ids.append(j)
+            co_occurs.append(comatrix[i, j])
      
     assert len(i_ids) == len(j_ids), "The length of the data are not the same"
     assert len(i_ids) == len(co_occurs), "The length of the data are not the same"
@@ -166,3 +147,11 @@ def load_data(data_dir):
     with open(data_dir, "rb") as f:
         mylist = pickle.load(f)
     return mylist
+
+def unpad_list(mylist):
+    padding_ind = len(mylist)
+    for i in range(len(mylist)):
+        if mylist[i] == 0:
+            padding_ind = i
+            break
+    return mylist[:padding_ind]
