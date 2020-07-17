@@ -11,13 +11,12 @@ import json
 from collections import defaultdict
 
 class GloVe(tf.keras.Model):
-    def __init__(self, json_dir, max_vocab_size=100, scaling_factor=0.75, batch_size=512):
+    def __init__(self, json_dir, max_vocab_size=100, scaling_factor=0.75):
         super(GloVe, self).__init__()
         self.config = set_config(json_dir)
 
         self.max_vocab_size = max_vocab_size
         self.scaling_factor = scaling_factor
-        self.batch_size = batch_size
         self.training_data = None        
         self.concept2id = load_dictionary(self.config.data.concept2id)
         self.vocab_size = len(self.concept2id)
@@ -89,20 +88,20 @@ class GloVe(tf.keras.Model):
 
     def train(self, num_epochs, batch_size):
         i_ids, j_ids, co_occurs = prepare_trainingset(self.comatrix)
-        total_batch = int(np.ceil(len(i_ids) / self.batch_size))
+        total_batch = int(np.ceil(len(i_ids) / batch_size))
         cost_avg = tf.keras.metrics.Mean()
 
         for epoch in range(num_epochs):
             progbar = tf.keras.utils.Progbar(len(i_ids))
             
             for i in random.sample(range(total_batch), total_batch): # shuffling the data 
-                i_batch = i_ids[i * self.batch_size : (i+1) * self.batch_size]
-                j_batch = j_ids[i * self.batch_size : (i+1) * self.batch_size]
-                co_occurs_batch = co_occurs[i * self.batch_size : (i+1) * self.batch_size]
+                i_batch = i_ids[i * batch_size : (i+1) * batch_size]
+                j_batch = j_ids[i * batch_size : (i+1) * batch_size]
+                co_occurs_batch = co_occurs[i * batch_size : (i+1) * batch_size]
                 cost, gradients = self.computeGradients([i_batch, j_batch, co_occurs_batch])
                 self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
                 cost_avg(cost) 
-                progbar.add(self.batch_size)
+                progbar.add(batch_size)
                 print("Step {}: Loss: {:.4f}".format(self.optimizer.iterations.numpy(), cost))
                 
             if (epoch % 1) == 0: 
