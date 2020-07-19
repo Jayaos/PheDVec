@@ -109,7 +109,7 @@ class GloVe(tf.keras.Model):
                 print("Epoch {}: Loss: {:.4f}".format(epoch, avg_loss))
                 self.epoch_loss_avg.append(avg_loss)
                     
-        self.saveEmbeddings(save_dir, epoch, avg_loss)
+        self.saveEmbeddings(epoch, avg_loss)
 
 def set_config(json_file):
     """
