@@ -208,6 +208,7 @@ def process_record(record_df):
     standard_record = []
     source_record = []
 
+    print("grouping patient record by patient_id...")
     grouped_by_patient = record_df.groupby(["patient_id"])
     patient_group = list(grouped_by_patient.groups)
 
