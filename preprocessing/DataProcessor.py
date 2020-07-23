@@ -18,7 +18,7 @@ class DataProcessor(object):
         self.icd10_phecode_dict = None
         self.icd10cm_phecode_dict = None
         self.omop_icd_dict = None
-        self.omop_phecode_dict = None
+
         self.standard_record = None
         self.source_record = None
 
@@ -56,15 +56,15 @@ class DataProcessor(object):
         self.med2vec_format = convert_med2vec_format(self.standard_record, self.concept2id, padding=padding)
         self.phedvec_format = convert_phedvec_format(self.standard_record, label_source, self.concept2id, self.phecode2id, padding=padding)
 
-    def buildDict_ICDPhecode(self):
+    def buildDict_ICDPhecode(self, decimal):
 
         print("load ICD-phecode mapping data...")
         icd10_phecode_map = pd.read_csv(self.config.data.icd10_phecode_map, encoding="ISO-8859-1")
         icd10cm_phecode_map = pd.read_csv(self.config.data.icd10cm_phecode_map, encoding="ISO-8859-1")
 
         print("build ICD-phecode dictionary...")
-        self.icd10_phecode_dict = build_ICD10phecode_dict(icd10_phecode_map)
-        self.icd10cm_phecode_dict = build_ICD10cmphecode_dict(icd10cm_phecode_map)
+        self.icd10_phecode_dict = build_ICD10phecode_dict(icd10_phecode_map, decimal)
+        self.icd10cm_phecode_dict = build_ICD10cmphecode_dict(icd10cm_phecode_map, decimal)
 
     def buildDict_OMOPICD(self):
 
@@ -141,27 +141,27 @@ def read_icd_omop(data_dir):
     
     return record_df
 
-def build_ICD9phecode_dict(icd9_map):
+def build_ICD9phecode_dict(icd9_map, decimal):
     icd9_dict = dict()
     for i in tqdm(range(icd9_map.shape[0])):
         if np.isnan(icd9_map["phecode"][i]) != True:
-            icd9_dict.update({icd9_map["icd9"][i] : truncate_decimal(icd9_map["phecode"][i], decimal=1)})
+            icd9_dict.update({icd9_map["icd9"][i] : truncate_decimal(icd9_map["phecode"][i], decimal=decimal)})
         
     return icd9_dict
 
-def build_ICD10phecode_dict(icd10_map):
+def build_ICD10phecode_dict(icd10_map, decimal):
     icd10_dict = dict()
     for i in tqdm(range(icd10_map.shape[0])):
         if np.isnan(icd10_map["PHECODE"][i]) != True:
-            icd10_dict.update({icd10_map["ICD10"][i] : truncate_decimal(icd10_map["PHECODE"][i], decimal=1)})
+            icd10_dict.update({icd10_map["ICD10"][i] : truncate_decimal(icd10_map["PHECODE"][i], decimal=decimal)})
     
     return icd10_dict
 
-def build_ICD10cmphecode_dict(icd10cm_map):
+def build_ICD10cmphecode_dict(icd10cm_map, decimal):
     icd10cm_dict = dict()
     for i in tqdm(range(icd10cm_map.shape[0])):
         if np.isnan(icd10cm_map["phecode"][i]) != True:
-            icd10cm_dict.update({icd10cm_map["icd10cm"][i] : truncate_decimal(icd10cm_map["phecode"][i], decimal=1)})
+            icd10cm_dict.update({icd10cm_map["icd10cm"][i] : truncate_decimal(icd10cm_map["phecode"][i], decimal=decimal)})
     
     return icd10cm_dict
 
